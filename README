@@ -1,2 +1,13 @@
 This is a random-ish collection of tools and toys. Generally speaking they
 are too small to live a life of their own but too useful to lose.
+
+  bin/ contains convenience commands, mostly related to kernel development
+  tests/ contains a couple of ad-hoc test suites
+
+This repo includes pexpect as a git subtree. Please avoid local modifications
+but, if you need to update to the latest version of pexpect for any reason,
+try:
+
+  git remote add -f pexpect https://github.com/pexpect/pexpect.git
+  git subtree pull --prefix pexpect/ pexpect master --squash
+
