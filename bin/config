@@ -1,0 +1,65 @@
+#!/bin/bash
+
+#
+# config
+#
+# Small wrapper around Linux' scripts/config
+#
+
+unset manual
+
+# Automatically locate the config script
+[ -e scripts/config ] && config=scripts/config
+[ -e ../scripts/config ] && config=../scripts/config
+if [ -z $config ]
+then
+	echo "ERROR: Can't find scripts/config" >&2
+	exit 1
+fi
+
+# Additional argument processing (over and above what scripts/config
+# normally provides) to simplify automation. This logic is *not* whitespace
+# safe but that OK because the underlying script doesn't require whitespace
+# in its arguments.
+for arg in "$@"
+do
+	case "$arg" in
+	# kgdb/kdb and debug info
+	kgdb|--kgdb)
+		args="$args --enable DEBUG_INFO --enable MAGIC_SYSRQ --enable MAGIC_SYSRQ_BREAK_EMULATION --enable KGDB --enable KGDB_KDB"
+		;;
+
+	# udev, systemd
+	modernize|--modernize)
+		args="$args --enable TMPFS --enable DEVTMPFS --enable CGROUPS --module AUTOFS4_FS --module IPV6"
+		;;
+
+	# IP auto configuration (for NFS root)
+	nfs|--nfs)
+		args="$args --enable IP_PNP --enable IP_PNP_DHCP"
+		;;
+
+	manual|--manual)
+		manual=1
+		;;
+
+	*defconfig)
+		echo make $arg
+		make $arg
+		;;
+
+	*)
+		args="$args $arg"
+		;;
+	esac
+done
+
+# Launch the config commands and accept defaults for the new options
+echo scripts/config $args
+/home/drt/Development/Kernel/linux/scripts/config $args
+
+if [ $? -eq 0 ] && [ -z $manual ]
+then
+	echo make olddefconfig
+	make olddefconfig
+fi
