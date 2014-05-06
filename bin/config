@@ -6,6 +6,7 @@
 # Small wrapper around Linux' scripts/config
 #
 
+unset args
 unset manual
 
 # Automatically locate the config script
@@ -39,6 +40,23 @@ do
 		args="$args --enable IP_PNP --enable IP_PNP_DHCP"
 		;;
 
+	# Lots of lock debugging logic
+	pedantic|--pedantic)
+		# Debug Lockups and Hangs
+		args="$args --enable LOCKUP_DETECTOR"
+		args="$args --enable DETECT_HUNG_TASK"
+
+		# Lock Debugging
+		args="$args --enable DEBUG_RT_MUTEXES"
+		args="$args --enable DEBUG_SPINLOCK"
+		args="$args --enable DEBUG_MUTEXES"
+		args="$args --enable DEBUG_WW_MUTEX_SLOWPATH"
+		args="$args --enable DEBUG_LOCK_ALLOC"
+		#args="$args --enable PROVE_LOCKING"
+		args="$args --enable LOCK_STAT"
+		args="$args --enable DEBUG_ATOMIC_SLEEP"
+		;;
+
 	manual|--manual)
 		manual=1
 		;;
@@ -55,8 +73,11 @@ do
 done
 
 # Launch the config commands and accept defaults for the new options
-echo scripts/config $args
-/home/drt/Development/Kernel/linux/scripts/config $args
+if  [ ! -z "$args" ]
+then
+	echo scripts/config $args
+	/home/drt/Development/Kernel/linux/scripts/config $args
+fi
 
 if [ $? -eq 0 ] && [ -z $manual ]
 then
