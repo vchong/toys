@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python2
 
 #
 # kiosktest.py
@@ -39,14 +39,15 @@ class TestKdbKiosk(unittest.TestCase):
 		focused test cases without a sprawling execution time.
 
 		"""
-		#cls.uart = pexpect.spawn('target-jei-serial agnes.lan')
-		cls.uart = pexpect.spawn(UARTCMD)
+                #cls.uart = pexpect.spawn('target-jei-serial agnes.lan')
+		cls.uart = pexpect.spawn(UARTCMD, timeout=10)
 		cls.uart.expect('Connected to ')
 		cls.uart.expect('Escape character is')
 		# Make absolutely sure the target is running (otherwise
 		# SSH interaction will fail)
 		cls.uart.send('q\r') # break out of the pager
 		cls.uart.send('go\r') # set the target running
+		#cls.uart.logfile = sys.stdout
 
 		cls.mgr = pxssh.pxssh()
 		cls.mgr.login(TARGETIP, 'root')
@@ -58,9 +59,12 @@ class TestKdbKiosk(unittest.TestCase):
 		cls.mgr.close()
 
 	def setUp(self):
-		# Automatically select the right kdb operating mode
+		# Automatically select the right default kdb operating mode
 		testname = str(self).split()[0]
-		kioskmode = 'kiosk' in testname.lower()
+		if 'kiosk' in testname.lower():
+			kioskmode = 0x20	# passive inspection only
+		else:
+			kioskmode = 1		# full power
 		self.setKioskMode(kioskmode)
 
 		# Stop the target
@@ -71,6 +75,9 @@ class TestKdbKiosk(unittest.TestCase):
 		# manipulate the target via SSH
 		self.sendCommand('q') # break out of the pager
 		self.sendCommand('go') # set the target running
+
+		# TODO: Clear out the old history so it doesn't risk
+		#       damaging the next test.
 
 	def sendInterrupt(self):
 		"""Interrupt the target using the UART.
@@ -84,10 +91,12 @@ class TestKdbKiosk(unittest.TestCase):
 			return chr((ord(c) - ord('A'))+1)
 		
 		self.uart.send(ctrl('B') + ctrl('R') + ctrl('K') + 'g')
+		self.uart.expect('Entering kdb')
 		self.uart.expect('kdb> ')
 
 	def triggerInterrupt(self):
 		self.mgr.sendline('echo g > /proc/sysrq-trigger')
+		self.uart.expect('Entering kdb')
 		self.uart.expect('kdb> ')
 
 	def prompt(self):
@@ -100,12 +109,7 @@ class TestKdbKiosk(unittest.TestCase):
 			self.uart.expect(reply)
 
 	def setKioskMode(self, mode):
-		if mode:
-			cmd = 'echo 1'
-		else:
-			cmd = 'echo 0'
-
-		cmd += ' > /sys/module/kdb/parameters/kiosk'
+		cmd = 'echo %d > /sys/module/kdb/parameters/cmd_enable' % (mode,)
 		self.mgr.sendline(cmd)
 		self.mgr.prompt()
 
@@ -128,6 +132,7 @@ class TestKdbKiosk(unittest.TestCase):
 		self.uart.expect('Display exception frame')  # UnSafe
 		self.uart.expect('more> ')
 		self.uart.send('q')
+		self.prompt()
 
 	def testKioskHelp(self):
 		#self.uart.logfile = sys.stdout
@@ -165,8 +170,6 @@ class TestKdbKiosk(unittest.TestCase):
 		self.mgr.prompt()
 		self.mgr.sendline('echo 1 > /proc/sys/kernel/sysrq')
 		self.mgr.prompt()
-		
-
 
 	def testKioskSysRq(self):
 		self.sendCommand('sr h', 'SysRq : HELP :')
