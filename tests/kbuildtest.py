@@ -52,6 +52,10 @@ class KbuildSuite(unittest.TestCase):
         self.assertEqual(0, exit_code,
             'Initial config failed: See "%s/lastbuild.log"' % (self.objdir,))
 
+        f = open(self.objdir + '/.gitignore', 'w')
+        f.write('*\n')
+        f.close()
+
     def tearDown(self):
         # Every single test impacts ARCH and CROSS_COMPILE so we will
         # leave them alone.
