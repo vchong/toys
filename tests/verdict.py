@@ -50,6 +50,10 @@ def build(cmds=()):
 	try:
 		for cmd in destringize(cmds):
 			run(cmd)
+
+		# Avoid collisions in /lib/modules by setting the local version
+		# to our username.
+		run('scripts/config --set-str LOCALVERSION -$USER-')
 		run('make -j24')
 		run('make INSTALL_MOD_PATH=/opt/debian/jessie-armel-rootfs modules_install')
 	except:
