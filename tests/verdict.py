@@ -54,7 +54,7 @@ def build(cmds=()):
 		# Avoid collisions in /lib/modules by setting the local version
 		# to our username.
 		run('scripts/config --set-str LOCALVERSION -$USER-')
-		run('make -j24')
+		run('make CC="ccache %sgcc" -j 24' % (os.environ['CROSS_COMPILE'],))
 		run('make INSTALL_MOD_PATH=/opt/debian/jessie-armel-rootfs modules_install')
 	except:
 		skip("Cannot compile")		
