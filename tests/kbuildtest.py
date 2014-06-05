@@ -181,6 +181,28 @@ class TestArmKernelBuilds(KbuildSuite):
         self.config_kgdb()
 
 #
+# ARM64
+#
+
+class TestArm64KernelBuilds(KbuildSuite):
+    def setUp(self):
+        self.setUpAndApplyConfig('arm64', 'aarch64-linux-gnu-',
+            '/opt/linaro/gcc-linaro-aarch64-linux-gnu-4.8-2014.04_linux')
+
+    def test_defconfig(self):
+        self.make()
+
+    def test_defconfig_kgdb(self):
+        self.config_kgdb()
+        self.make()
+
+    def xtest_allyesconfig(self):
+        self.make()
+
+    def xtest_allmodconfig(self):
+        self.make()
+
+#
 # PowerPC
 #
 
