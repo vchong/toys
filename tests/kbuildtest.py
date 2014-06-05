@@ -108,27 +108,6 @@ class KbuildSuite(unittest.TestCase):
             'Build failed: See "%s/lastbuild.log"' % (self.objdir))
 
 #
-# X86
-#
-
-class TestX86KernelBuilds(KbuildSuite):
-    def setUp(self):
-        self.setUpAndApplyConfig('x86', None, None)
-
-    def test_defconfig(self):
-        self.make()
-
-    def test_defconfig_kgdb(self):
-        self.config_kgdb()
-        self.make()
-
-    def test_allyesconfig(self):
-        self.make()
-
-    def test_allmodconfig(self):
-        self.make()
-
-#
 # ARM
 #
 
@@ -215,6 +194,27 @@ class TestPowerpcKernelBuilds(KbuildSuite):
 
     def test_defconfig_kgdb(self):
         self.config_kgdb()
+        self.make()
+
+#
+# X86
+#
+
+class TestX86KernelBuilds(KbuildSuite):
+    def setUp(self):
+        self.setUpAndApplyConfig('x86', None, None)
+
+    def test_defconfig(self):
+        self.make()
+
+    def test_defconfig_kgdb(self):
+        self.config_kgdb()
+        self.make()
+
+    def test_allyesconfig(self):
+        self.make()
+
+    def test_allmodconfig(self):
         self.make()
 
 #
