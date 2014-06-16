@@ -1,0 +1,165 @@
+Personal ACI using Jenkins
+==========================
+
+Introduction
+------------
+
+This is a concise recipe-book style guide to installing and configuring Jenkins
+to use a personal ACI server. Neglecting download times is should be possible
+to install and _secure_ a Jenkins installation within twenty minutes or so
+using the recipes in this guide.
+
+Initial install for Fedora and RHEL
+-----------------------------------
+
+These instructions assume that yum (or dnf) is setup and that you use sudo into
+order to launch commands as root.
+
+. Get the install media
++
+........
+wget http://pkg.jenkins-ci.org/redhat/jenkins.repo
+wget http://pkg.jenkins-ci.org/redhat/jenkins-ci.org.key
+........
+
+. Setup yum
++
+........
+sudo mv jenkins.repo /etc/yum.repos.d/
+sudo chown root.root /etc/yum.repos.d/jenkins.repo 
+sudo chmod 644 /etc/yum.repos.d/jenkins.repo
+sudo rpm --import jenkins-ci.org.key
+........
+
+. Install Jenkins
++
+........
+sudo yum install jenkins
+........
+ . Allow access only on from localhost; by default the permissions are wide
+   open so this is good practice whilst setting things up.
++
+........
+sudo sed -ie 's/JENKINS_ARGS=""/JENKINS_ARGS="--httpListenAddress=127.0.0.1"/' /etc/sysconfig/jenkins
+........
+
+. Launch the service
++
+........
+sudo systemctl start jenkins
+........
+
+. Browse to the jenkins UI
++
+........
+firefox localhost:8080
+........
+
+Handling http proxies
+---------------------
+
+One of Jenkins most useful features is its plugin manager which can
+automatically download and manage plugins. For the plugin manager to work
+effectively in an environment with mandatory web proxies it must be configured
+correctly.
+
+Starting in the top left hand corner:
+
+ . Click *Jenkins* -> *Manage Jenkins* -> *Manage Plugins*
+ . Switch to the *Advanced* tab
+ . Set *Server* and *Port*.
+ . Optional set *User name* and *Password*
+ . Click *Submit*
+
+Installing the git plugin
+-------------------------
+
+[[git-plugin]]
+Having configured the plugin manager lets install one of the most important
+plugins for software development, the git plugin.
+
+Again, starting in the top left hand corner of the user interface:
+
+ . *Jenkins* -> *Manage Jenkins* -> *Manage Plugins*
+ . Switch to the *Available* tab
+ . Type 'git' into the *Filter* box in the top right hand corner (don't press return)
+ . Check the box next to the *Git Plugin*
+ . *Download now and install after restart*
+ . Check the box next to *Restart Jenkins when installation is complete and no jobs are running*
+ . Wait for Jenkins to restart
+
+Enabling SSL encryption
+------------------------
+
+Before we enable mechanisms to authenicate users using a password it is
+desireable to encrypt the link between the browser and Jenkins using SSL.
+
+Firstly a (self-signed) SSL certificate must be generated:
+
+ . +cd ~jenkins+
+ . +sudo mkdir secrets+
+ . +sudo keytool -genkey -keyalg RSA -alias selfsigned -keystore secrets/keystore.jks -storepass P1gSnoUt -keypass P1gSnoUt -dname "cn=localhost"+
+ . +sudo chown -R jenkins.jenkins secrets/+
+
+Finally modify /etc/sysconfig/jenkins so that *JENKINS_ARGS* is set as follows:
+
++JENKINS_ARGS="--httpsPort=8443 --httpsKeyStore=$JENKINS_HOME/secrets/keystore.jks --httpsKeyStorePassword=P1gSnoUt"+
+
+This results in the server listening, as before, for _unencrypted_ traffic on
+port 8080 (and, if you followed the advice above, with access limited to
+localhost). However now the server also listens for encrypted traffic on port
+8443.
+
+The idea of this is that human users use https://yourhost.yoursite:8443 but
+build systems and other automated activity on the same server can use use
+http://yourhost.yoursite:8080 (and therefore don't require special care to
+accept the self-signed certificate).
+
+Finally we must restart the jenkins server:
+
+ . +sudo systemctl restart jenkins+
+
+Configuring PAM based security
+------------------------------
+
+A program that performs authentication using PAM needs to run with root
+privelidges. To avoid having to Jenkins itself with such pervasive access
+rights we ned to use a SUID helper program. The following commands install the
+helper program and make it available to jenkins.
+
+ . +sudo yum install pwauth+
+ . +sudo groupmems --add jenkins --group apache+
+ . +sudo systemctl restart jenkins+
+
+Install the pw-auth plugin:
+
+ . Click *Jenkins* -> *Manage Jenkins* -> *Manage Plugins*
+ . Switch to the *Available* tab
+ . Type 'PAM' into the *Filter* box in the top right hand corner (don't press return)
+ . Check the box next to the *pw-auth*
+ . *Download now and install after restart*
+ . Check the box next to *Restart Jenkins when installation is complete and no jobs are running*
+ . Wait for Jenkins to restart
+
+Finally we must configure the global security and set appropriate authorization:
+
+ . Click *Jenkins* -> *Manage Jenkins* -> *Configure Global Security*
+ . Set *Enable security* to checked
+ . In the *Access Control* section select *PWAuth Authentication*
+ . Click *Advanced*
+ . Set *Path to pwauth* to /usr/bin/pwauth .
+ . Click *Test* and expect "Success" to appear.
+ . In the *Authoritization* section select *Matrix-based security*
+ . Add your username to User/group to add: and click *Add*
+ . Check all the boxes for your username (there is a icon at the far right to toggle all the check boxes)
+ . Click *Save*.
+
+You will be prompted to login. Use your normal Unix password to do this.
+
+[NOTE]
+==========
+Currently (March 2013) there is a bug in the pw-auth plugin such that the
+*Path to pwauth* is not honoured after Jenkins restarts. This can be worked around as follows:
+
+ . +sudo ln -s ../../bin/pwauth /usr/local/bin/pwauth+
+==========
