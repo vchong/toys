@@ -10,6 +10,7 @@ from __future__ import print_function
 
 import os
 import pexpect
+import time
 import traceback
 import sys
 
@@ -40,6 +41,10 @@ def good(msg, cleanup=()):
 	for f in cleanup:
 		f.close()
 	print('\n### GOOD: Observed boot messages ###')
+
+def warn(msg):
+	"""Report a warning (and continue)."""
+	print('\n### WARNING: %s ###' % (msg,))
 
 def destringize(s):
 	if isinstance(s, basestring):
@@ -85,6 +90,40 @@ def qemu(cmd, logfile=None):
 		return q
 	except:
 		bad("Cannot boot")
+
+def stlinux_arm_boot(cmd, logfile=None):
+	"""Launch stlinux_arm_boot and wait for the kernel to start booting."""
+
+	def boot(cmd):
+		print(cmd)
+		g = pexpect.spawn(cmd, logfile=logfile)
+		g.expect('Kernel auto-detected')
+		g.expect('Booting')
+		# TODO: recognise SDI.*ERROR and bail out without the timeout
+		g.expect('Switching to Thread')
+		g.expect('Loading section')
+
+	try:
+		raise Exception
+		boot(cmd)
+	except:
+		warn('cannot connect, retrying')
+		try:
+			# Kill it nicely
+			run('killall armv7-linux-unw')
+			time.sleep(5)
+
+			# Kill it nastily (this will fail if nice worked...)
+			try:
+				run('killall -KILL armv7-linux-unw')
+				time.sleep(5)
+			except:
+				pass
+
+			# Retry
+			boot(cmd)
+		except:
+			bad("Cannot boot")
 
 def expect_systemd_boot(s, bootloader=()):
 	"""Observe a typical boot sequence until we see evidence of
