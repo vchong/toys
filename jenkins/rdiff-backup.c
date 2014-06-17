@@ -6,21 +6,26 @@
 
 #define _GNU_SOURCE
 
+#include <assert.h>
+#include <getopt.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#define verify(x) do_verify(x, #x)
-
-void do_verify(bool c, const char *t)
+void verify_failed(const char *t)
 {
-	if (!c) {
-		fprintf(stderr, "ERROR: Security check failed: %s\n", t);
-		exit(1);
-	}
+	fprintf(stderr, "ERROR: Security check failed: %s\n", t);
+	exit(1);
 }
+
+#define verify(x)                                                              \
+	do {                                                                   \
+		if (!(x))                                                      \
+			verify_failed(#x);                                     \
+	} while (0)
 
 void scrub_environment(void)
 {
@@ -28,18 +33,58 @@ void scrub_environment(void)
 	putenv("PATH=/bin:/usr/bin");
 }
 
-int main(int argc, const char *argv[])
+char *xstrdup_printf(const char *fmt, ...)
 {
+	va_list ap;
+
+	va_start(ap, fmt);
+	int len = vsnprintf(NULL, 0, fmt, ap);
+	va_end(ap);
+
+	char *s = malloc(len+1);
+	if (!s) {
+		fprintf(stderr, "ERROR: Cannot allocate memory\n");
+		exit(2);
+	}
+
+	va_start(ap, fmt);
+	vsprintf(s, fmt, ap);
+	va_end(ap);
+
+	return s;
+}
+
+int main(int argc, char * const argv[])
+{
+	char *verbosity = NULL;
+
 	scrub_environment();
 
-	verify(argc == 3);
+	int c;
+	static struct option long_options[] = {
+		{"verbosity", required_argument, 0, 'v'},
+		{ 0 }
+	};
+	while (-1 != (c = getopt_long(argc, argv, "v:", long_options, NULL))) {
+		switch(c) {
+		case 'v':
+			verbosity =
+			    xstrdup_printf("--verbosity=%d", atoi(optarg));
+			break;
+		default:
+			verify_failed("bad argument(s)");
+			break;
+		}
+	}
 
-	const char *source = argv[1];
-	const char *dest = argv[2];
+	verify(argc - optind == 2);
+
+	char *source = argv[optind];
+	char *dest = argv[optind+1];
 
 #define VALIDATE(s, d) \
-	do if (0 == strcmp(argv[1], s)) { \
-		verify(0 == strcmp(argv[2], d)); \
+	do if (0 == strcmp(source, s)) { \
+		verify(0 == strcmp(dest, d)); \
 		valid = true; \
 	} while(0)
 
@@ -47,10 +92,20 @@ int main(int argc, const char *argv[])
 	VALIDATE("/home", "/backup/home");
 	VALIDATE("/sandpit/sundance", "/backup/sandpit/sundance");
 	VALIDATE("harvey:/sandpit/harvey", "/backup/sandpit/harvey");
-	verify(valid);
+	if (!valid)
+		verify_failed("invalid source directory");
 
-	execl("rdiff-backup", "/usr/bin/rdiff-backup",
-			 source, dest, NULL);
+	char *eargv[5];
+	int eargc = 0;
+	eargv[eargc++] = "/usr/bin/rdiff-backup";
+	if (verbosity)
+		eargv[eargc++] = verbosity;
+	eargv[eargc++] = source;
+	eargv[eargc++] = dest;
+	eargv[eargc] = NULL;
+	assert(eargc < (sizeof(eargv) / sizeof(eargv[0])));
+
+	execv("/usr/bin/rdiff-backup", eargv);
 	/* not reached */
 
 	return 0;
