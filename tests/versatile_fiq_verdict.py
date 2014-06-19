@@ -19,6 +19,7 @@ def run():
 		'rw nfsroot=10.0.2.2:/opt/debian/jessie-armel-rootfs,v3 ' +
 		'ip=dhcp"')
 	uart = verdict.telnet('localhost', 5331)
+	verdict.expect_slow_replies(uart)
 	verdict.expect_systemd_boot(uart, 'Uncompressing Linux...')
 
 	# Interact with the NMI debugger

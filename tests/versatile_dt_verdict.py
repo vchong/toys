@@ -16,6 +16,7 @@ def run():
 		'ip=dhcp"')
 
 	uart = verdict.telnet('localhost', 5331)
+	verdict.expect_slow_replies(uart)
 	verdict.expect_systemd_boot(uart, 'Uncompressing Linux...')
 
 	verdict.good((uart, qemu))
