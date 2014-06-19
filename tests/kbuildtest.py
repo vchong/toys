@@ -150,9 +150,6 @@ class TestArmKernelBuilds(KbuildSuite):
     def test_lart_defconfig(self): # ARCH_SA1100
         self.make()
 
-    def test_spear3xx_defconfig(self):
-        self.make()
-
     def test_spear6xx_defconfig(self):
         self.make()
 
@@ -160,15 +157,6 @@ class TestArmKernelBuilds(KbuildSuite):
         self.make()
 
     def test_s3c2410_defconfig(self):
-        self.make()
-
-    def test_s3c6400_defconfig(self):
-        self.make()
-
-    def test_s5p64x0_defconfig(self):
-        self.make()
-
-    def test_s5pc100_defconfig(self):
         self.make()
 
     def test_s5pv210_defconfig(self):
