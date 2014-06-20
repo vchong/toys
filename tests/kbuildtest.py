@@ -132,6 +132,9 @@ class TestArmKernelBuilds(KbuildSuite):
     def test_integrator_defconfig(self):
         self.make()
 
+    def test_ixp4xx_defconfig(self): # big endian
+        self.make()
+
     def test_ks8695_defconfig(self):
         self.make()
 
