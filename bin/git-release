@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+
+#
+# git-release
+#
+# Process a specially formed text file into a ready-to-go patch series.
+#
+
+# Structure is:
+
+# Subject: Name of patch series
+# Branch: Local branch (for error checking)
+#
+# --- cut here ---
+#
+# Description of the patch series goes here...
+#
+# ... and can be many paragraphs.
+#
+# --- cut here ---
+#
+# git format-patch \
+#     --with=arguments \
+#     --to=generate \
+#     something..sensible
+#
+# v1: <mail-reference-for-old-patch-series>
+# v1: http://link.to.old.patch.series
+#
+# Anything you want can come after the blank line. It will be ignored
+# by the tool.
+
+from __future__ import print_function
+import re, subprocess, sys
+
+def parse_header(ln, attr):
+	if ':' not in ln:
+		return False
+
+	(name, value) = ln.split(':', 1)
+	attr[name] = value.strip()
+	return True
+
+def parse_cover(ln, c):
+	if len(ln) == 0 and len(c) == 0:
+		return True
+	if ln.startswith('--- cut here '):
+		return len(c) == 0
+	if ln.startswith('git ') and len(c) == 0:
+		return False
+	
+	c.append(ln)
+	return True
+
+def parse_format_patch(ln, fp):
+	if ln.startswith('--- cut here '):
+		return True
+	if len(ln) == 0:
+		return len(fp) == 0
+
+	fp.append(ln)
+	return True
+
+def parse_xrefs(ln, x):
+	if len(ln) == 0:
+		return True
+
+	if re.match('^[^ :]+: +[<].*@.*[>]$', ln):
+		x.append(ln)
+		return True
+
+	if re.match('^[^ :]: http', ln):
+		x.append(ln)
+		return True
+
+	return False
+
+#
+# Extract information from the description file
+#
+
+section = "header"
+attributes = {}
+blurb = []
+format_patch = []
+xrefs = []
+
+f = open(sys.argv[1], 'r')
+for ln in f.readlines():
+	ln = ln.rstrip()
+
+	if section == "header":
+		if not parse_header(ln, attributes):
+			section = "cover"
+	if section == "cover":
+		if not parse_cover(ln, blurb):
+			section = "format_patch"
+	if section == "format_patch":
+		if not parse_format_patch(ln, format_patch):
+			section = "xrefs"
+	if section == "xrefs":
+		if not parse_xrefs(ln, xrefs):
+			break
+f.close()
+
+#
+# Check the branch
+#
+
+if 'Branch' in attributes:
+	status = subprocess.call('git symbolic-ref HEAD | ' +
+				     "grep -q 'refs/heads/%s$'"
+			% (attributes['Branch'],), shell=True)
+	if status != 0:
+		print("ERROR: Current branch is not " + attributes['Branch'])
+		sys.exit(1)
+
+#
+# Run the git command
+#
+
+status = subprocess.call('ls *.patch 2> /dev/null', shell=True)
+if status == 0:
+	print()
+	print("WARNING: The patches listed above already exist in the")
+	print("         current directory.")
+	print()
+
+print("Generating patches: ")
+status = subprocess.call('\n'.join(format_patch), shell=True)
+if status != 0:
+	sys.exit(status)
+
+print()
+
+status = subprocess.call('scripts/checkpatch.pl *.patch | ' +
+			     "grep -v '0000-cover-letter.patch' |" +
+			     "grep '.*has style problems.*'", shell=True)
+
+#
+# Update the cover letter
+#
+
+# The file can be trivially regenerated so we simple overwrite the
+# original
+
+cover = []
+f = open('0000-cover-letter.patch', 'r')
+for ln in f.readlines():
+	ln = ln.rstrip()
+	cover.append(ln)
+f.close()
+
+f = open('0000-cover-letter.patch', 'w')
+for ln in cover:
+	if ln == '*** BLURB HERE ***' and len(blurb):
+		print('\n'.join(blurb), file=f)
+	elif ln.endswith('*** SUBJECT HERE ***') and 'Subject' in attributes:
+		print(ln[:-20] + attributes['Subject'], file=f)
+	else:
+		print(ln, file=f)
+f.close()
+	
+
+
