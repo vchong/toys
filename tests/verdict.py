@@ -104,7 +104,6 @@ def stlinux_arm_boot(cmd, logfile=None):
 		g.expect('Loading section')
 
 	try:
-		raise Exception
 		boot(cmd)
 	except:
 		warn('cannot connect, retrying')
@@ -146,4 +145,27 @@ def expect_systemd_boot(s, bootloader=()):
 	except:
 		bad('Incorrect boot activity messages')
 
-	
+def expect_nmi_debugger(s):
+	"""Interact with the NMI debugger"""
+	try:
+		s.send('\r')
+
+		# This tries to defeat character interleaving as boot messages
+		# interact with the FIQ messages (although it won't work
+		# perfectly). Without interleaving we could have something like:
+		# s.expect('Type [^ ]* to enter the debugger')
+		s.expect('[$][^3]*[3][^#]*#[^3]*3[^3]*3')
+
+		s.send('$3#33\r')
+		s.expect('Entering kdb .* due to NonMaskable Interrupt')
+		s.expect('more>')
+		s.send('q\r')
+		s.expect('kdb>')
+		s.send('go\r')
+	except:
+		bad('Cannot interact with NMI debugger')
+
+def expect_login_prompt(s):
+	"""Wait for the login prompt"""
+	s.expect('debian-[^ ]* login:')
+
