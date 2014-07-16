@@ -57,6 +57,19 @@ do
 		args="$args --enable DEBUG_ATOMIC_SLEEP"
 		;;
 
+	# Enable Thumb2, disable broken architectures
+	thumb|--thumb|thumb2|--thumb2)
+		# Enable thumb
+		args="$args --enable THUMB2_KERNEL"
+
+		# Disable ARCH_MVEBU and ARCH_BERLIN
+		# (arch/arm/kernel/pj4-cp0.c has non-thumb instructions)
+		args="$args --disable ARCH_MVEBU --disable ARCH_BERLIN"
+
+		# Disable IWMMXT
+		args="$args --disable IWMMXT"
+		;;
+
 	manual|--manual)
 		manual=1
 		;;
