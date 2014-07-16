@@ -31,7 +31,7 @@
 # by the tool.
 
 from __future__ import print_function
-import re, subprocess, sys
+import os, re, subprocess, sys
 
 def parse_header(ln, attr):
 	if ':' not in ln:
@@ -131,11 +131,15 @@ status = subprocess.call('\n'.join(format_patch), shell=True)
 if status != 0:
 	sys.exit(status)
 
-print()
-
+print("\nChecking for style problems:\n")
 status = subprocess.call('scripts/checkpatch.pl *.patch | ' +
 			     "grep -v '0000-cover-letter.patch' |" +
 			     "grep '.*has style problems.*'", shell=True)
+if status == 0:
+	if 'IGNORE_CHECKPATCH' not in os.environ:
+		sys.exit(2)
+else:
+	print("None found")
 
 #
 # Update the cover letter
@@ -144,22 +148,23 @@ status = subprocess.call('scripts/checkpatch.pl *.patch | ' +
 # The file can be trivially regenerated so we simple overwrite the
 # original
 
-cover = []
-f = open('0000-cover-letter.patch', 'r')
-for ln in f.readlines():
-	ln = ln.rstrip()
-	cover.append(ln)
-f.close()
+if '--cover-letter' in ''.join(format_patch):
+	cover = []
+	f = open('0000-cover-letter.patch', 'r')
+	for ln in f.readlines():
+		ln = ln.rstrip()
+		cover.append(ln)
+	f.close()
 
-f = open('0000-cover-letter.patch', 'w')
-for ln in cover:
-	if ln == '*** BLURB HERE ***' and len(blurb):
-		print('\n'.join(blurb), file=f)
-	elif ln.endswith('*** SUBJECT HERE ***') and 'Subject' in attributes:
-		print(ln[:-20] + attributes['Subject'], file=f)
-	else:
-		print(ln, file=f)
-f.close()
+	f = open('0000-cover-letter.patch', 'w')
+	for ln in cover:
+		if ln == '*** BLURB HERE ***' and len(blurb):
+			print('\n'.join(blurb), file=f)
+		elif ln.endswith('*** SUBJECT HERE ***') and 'Subject' in attributes:
+			print(ln[:-20] + attributes['Subject'], file=f)
+		else:
+			print(ln, file=f)
+	f.close()
 	
-
+print("\nRelease tags:\n" + '\n'.join(xrefs))
 
