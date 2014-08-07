@@ -33,6 +33,19 @@
 from __future__ import print_function
 import os, re, subprocess, sys
 
+def shell(cmd):
+	'''Run a shell command and capture any output.'''
+	try:
+		output = subprocess.check_output(cmd, shell=True)
+		returncode = 0
+	except subprocess.CalledProcessError as ex:
+		output = ex.output
+		returncode = ex.returncode
+	output = output.decode(encoding='UTF-8').rstrip().split('\n')
+	if output == '':
+		output = None
+	return (returncode, output)
+
 def parse_header(ln, attr):
 	if ':' not in ln:
 		return False
@@ -85,7 +98,33 @@ blurb = []
 format_patch = []
 xrefs = []
 
-f = open(sys.argv[1], 'r')
+#
+# Extract information from the description file
+#
+
+if len(sys.argv) > 1:
+	f = open(sys.argv[1], 'r')
+else:
+	print("Auto-detecting release manifest:")
+	# Try to figure out what file to use based on the current git Branch
+	branch = subprocess.check_output('git symbolic-ref HEAD | ' +
+					     "sed -e 's:refs/heads/::'",
+					 shell=True)
+	branch = branch.decode(encoding='UTF-8').rstrip()
+	(res, fnames) = shell(("grep -l '[Bb]ranch: *%s' " +
+			"$HOME/Documents/Wiki/*.wiki") % (branch,))
+	if 0 != res:
+		print('Cannot find description for branch %s' %
+				(branch,), file=sys.stderr)
+		sys.exit(1)
+	if len(fnames) > 1:
+		print('Ambiguous branch. Candidates are:', file=sys.stderr)
+		print('    ' + '\n    '.join(fnames), file=sys.stderr)
+		sys.exit(1)
+	print(fnames[0])
+	print()
+	f = open(fnames[0], 'r')
+
 for ln in f.readlines():
 	ln = ln.rstrip()
 
