@@ -31,7 +31,7 @@
 # by the tool.
 
 from __future__ import print_function
-import fnmatch, os, re, subprocess, sys
+import fnmatch, shlex, os, re, subprocess, sys
 
 def readfile(fname):
 	contents = []
@@ -130,10 +130,11 @@ else:
 		sys.exit(1)
 	if len(fnames) > 1:
 		print('Ambiguous branch. Candidates are:', file=sys.stderr)
-		print('    ' + '\n    '.join(fnames), file=sys.stderr)
+		for fname in fnames:
+			print('    ' + shlex.quote(fname), file=sys.stderr)
 		sys.exit(1)
 	manifest = fnames[0]
-	print(manifest)
+	print(shlex.quote(manifest))
 	print()
 
 f = open(manifest, 'r')
