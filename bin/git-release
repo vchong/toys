@@ -33,6 +33,15 @@
 from __future__ import print_function
 import fnmatch, os, re, subprocess, sys
 
+def readfile(fname):
+	contents = []
+	f = open(fname, 'r')
+	for ln in f.readlines():
+		ln = ln.rstrip()
+		contents.append(ln)
+	f.close()
+	return contents
+
 def shell(cmd):
 	'''Run a shell command and capture any output.'''
 	try:
@@ -42,7 +51,7 @@ def shell(cmd):
 		output = ex.output
 		returncode = ex.returncode
 	output = output.decode(encoding='UTF-8').rstrip().split('\n')
-	if output == '':
+	if len(output) == 0 or (len(output) == 1 and output[0] == ''):
 		output = None
 	return (returncode, output)
 
@@ -105,7 +114,7 @@ xrefs = []
 #
 
 if len(sys.argv) > 1:
-	f = open(sys.argv[1], 'r')
+	manifest = sys.argv[1]
 else:
 	print("Auto-detecting release manifest:")
 	# Try to figure out what file to use based on the current git Branch
@@ -123,9 +132,11 @@ else:
 		print('Ambiguous branch. Candidates are:', file=sys.stderr)
 		print('    ' + '\n    '.join(fnames), file=sys.stderr)
 		sys.exit(1)
-	print(fnames[0])
+	manifest = fnames[0]
+	print(manifest)
 	print()
-	f = open(fnames[0], 'r')
+
+f = open(manifest, 'r')
 
 for ln in f.readlines():
 	ln = ln.rstrip()
@@ -173,16 +184,9 @@ for patch in old_patchfiles:
 #
 
 # The file can be trivially regenerated so we simple overwrite the
-# original
-
+# original without much regard for safety
 if '--cover-letter' in ''.join(format_patch):
-	cover = []
-	f = open('0000-cover-letter.patch', 'r')
-	for ln in f.readlines():
-		ln = ln.rstrip()
-		cover.append(ln)
-	f.close()
-
+	cover = readfile('0000-cover-letter.patch')
 	f = open('0000-cover-letter.patch', 'w')
 	for ln in cover:
 		if ln == '*** BLURB HERE ***' and len(blurb):
@@ -192,6 +196,22 @@ if '--cover-letter' in ''.join(format_patch):
 		else:
 			print(ln, file=f)
 	f.close()
+elif '--notes' not in ''.join(format_patch) and len(patchfiles) == 1:
+	done = not len(blurb)
+	patch = readfile(patchfiles[0])
+	f = open(patchfiles[0], 'w')
+	for ln in patch:
+		if not done and ln == '---':
+			print('---\n\nNotes:\n    ' + '\n    '.join(blurb) +
+					'\n', file=f)
+			done = True
+		else:
+			print(ln, file=f)
+	f.close()
+elif len(blurb):
+	warnings.append(
+		'%s contains descriptive text but there is nowhere to apply it'
+		% (manifest,))
 
 #
 # Check for any style problems
@@ -200,7 +220,7 @@ if '--cover-letter' in ''.join(format_patch):
 (unused, output) = shell(
 	"scripts/checkpatch.pl %s | grep '.*has style problems.*'" %
 	(' '.join([x for x in patchfiles if x != '0000-cover-letter.patch']),))
-if len(output):
+if output:
 	if 'IGNORE_CHECKPATCH' not in os.environ:
 		errors += output
 	else:
