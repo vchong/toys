@@ -31,7 +31,7 @@
 # by the tool.
 
 from __future__ import print_function
-import os, re, subprocess, sys
+import fnmatch, os, re, subprocess, sys
 
 def shell(cmd):
 	'''Run a shell command and capture any output.'''
@@ -89,9 +89,11 @@ def parse_xrefs(ln, x):
 	return False
 
 #
-# Extract information from the description file
+# Initialize accumulator variables
 #
 
+errors = []
+warnings = []
 section = "header"
 attributes = {}
 blurb = []
@@ -155,30 +157,16 @@ if 'Branch' in attributes:
 		sys.exit(1)
 
 #
-# Run the git command
+# Run the git command to generate patches
 #
 
-status = subprocess.call('ls *.patch 2> /dev/null', shell=True)
-if status == 0:
-	print()
-	print("WARNING: The patches listed above already exist in the")
-	print("         current directory.")
-	print()
-
 print("Generating patches: ")
-status = subprocess.call('\n'.join(format_patch), shell=True)
-if status != 0:
-	sys.exit(status)
-
-print("\nChecking for style problems:\n")
-status = subprocess.call('scripts/checkpatch.pl *.patch | ' +
-			     "grep -v '0000-cover-letter.patch' |" +
-			     "grep '.*has style problems.*'", shell=True)
-if status == 0:
-	if 'IGNORE_CHECKPATCH' not in os.environ:
-		sys.exit(2)
-else:
-	print("None found")
+old_patchfiles = fnmatch.filter(os.listdir('.'), '*.patch')
+(unused, patchfiles) = shell('\n'.join(format_patch))
+print('\n'.join(patchfiles))
+old_patchfiles = [ x for x in old_patchfiles if x not in patchfiles ]
+for patch in old_patchfiles:
+	errors.append('%s is obsolete, please delete.' % (patch,))
 
 #
 # Update the cover letter
@@ -204,6 +192,30 @@ if '--cover-letter' in ''.join(format_patch):
 		else:
 			print(ln, file=f)
 	f.close()
-	
+
+#
+# Check for any style problems
+#
+
+(unused, output) = shell(
+	"scripts/checkpatch.pl %s | grep '.*has style problems.*'" %
+	(' '.join([x for x in patchfiles if x != '0000-cover-letter.patch']),))
+if len(output):
+	if 'IGNORE_CHECKPATCH' not in os.environ:
+		errors += output
+	else:
+		warnings += output
+
 print("\nRelease tags:\n" + '\n'.join(xrefs))
 
+#
+# Report warnings and errors
+#
+
+if len(warnings):
+	print("\nWarnings:")
+	print('\n'.join(warnings))
+if len(errors):
+	print("\nErrors:")
+	print('\n'.join(errors))
+	sys.exit(2)
