@@ -125,7 +125,7 @@ def stlinux_arm_boot(cmd, logfile=None):
 			bad("Cannot boot")
 
 def expect_slow_replies(s):
-	s.timeout *= 2
+	s.timeout *= 4
 
 def expect_systemd_boot(s, bootloader=()):
 	"""Observe a typical boot sequence until we see evidence of
