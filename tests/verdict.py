@@ -127,12 +127,8 @@ def stlinux_arm_boot(cmd, logfile=None):
 def expect_slow_replies(s):
 	s.timeout *= 4
 
-def expect_systemd_boot(s, bootloader=()):
-	"""Observe a typical boot sequence until we see evidence of
-	systemd issuing messages to the console.
-	
-	"""
-	try:	
+def expect_kernel_boot(s, bootloader=()):
+	try:
 		for msg in destringize(bootloader):
 			s.expect(msg)
 		s.expect('Booting Linux') # 0.000000
@@ -141,9 +137,21 @@ def expect_systemd_boot(s, bootloader=()):
 		s.expect('NET: Registered protocol family 2')
 		s.expect('io scheduler [^ ]* registered .default.')
 		s.expect('Freeing unused kernel memory')
+	except:
+		bad('Incorrect boot activity messages (kernel)')
+
+
+def expect_systemd_boot(s, bootloader=()):
+	"""Observe a typical boot sequence until we see evidence of
+	systemd issuing messages to the console.
+
+	"""
+	expect_kernel_boot(s, bootloader);
+
+	try:
 		s.expect('Listening on Syslog Socket.')
 	except:
-		bad('Incorrect boot activity messages')
+		bad('Incorrect boot activity messages (systemd)')
 
 def expect_nmi_debugger(s):
 	"""Interact with the NMI debugger"""
