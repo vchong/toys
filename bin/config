@@ -25,6 +25,35 @@ fi
 for arg in "$@"
 do
 	case "$arg" in
+	# Basic android support
+	android|--android)
+		args="$args --enable ANDROID"
+		args="$args --enable ANDROID_BINDER_IPC"
+		args="$args --enable ANDROID_BINDER_IPC_32BIT"
+		args="$args --enable ANDROID_INTF_ALARM_DEV"
+		args="$args --enable ANDROID_LOGGER"
+		args="$args --enable ANDROID_LOW_MEMORY_KILLER"
+		args="$args --enable ANDROID_TIMED_GPIO"
+		args="$args --enable ANDROID_TIMED_OUTPUT"
+		args="$args --enable ASHMEM"
+		args="$args --enable ION"
+		args="$args --enable ION_DUMMY"
+		args="$args --enable ION_TEST"
+		args="$args --enable SW_SYNC"
+		args="$args --enable SW_SYNC_USER"
+		args="$args --enable SYNC"
+
+		# Android (last check @ 4.4) encourages firmware to be
+		# placed in non-standard locations which will be
+		# searched by Android's ueventd. Thus we need the
+		# user helpers enabled.
+		args="$args --enable FW_LOADER_USER_HELPER_FALLBACK"
+
+		# Having the console running is annoying for android...
+		# ... but if you don't have a console there's no GFX at all!
+		#args="$args --disable FRAMEBUFFER_CONSOLE"
+		;;
+
 	# kgdb/kdb and debug info
 	kgdb|--kgdb)
 		args="$args --enable DEBUG_INFO --enable MAGIC_SYSRQ --enable MAGIC_SYSRQ_BREAK_EMULATION --enable KGDB --enable KGDB_KDB"
