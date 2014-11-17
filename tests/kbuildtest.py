@@ -8,8 +8,18 @@
 
 #
 # Usage:
+#
 #   <change into a mrproper'd kernel source directory>
-#   nice ionice <path_to>/x86buildtest.py
+#   nice ionice <path_to>/kbuildtest.py
+#
+# Interactive usage (single build):
+#
+#   <change into a mrproper'd kernel source directory>
+#   PYTHONPATH=<path_to_kbuildtest.py> \
+#   python -m unittest --verbose \
+#       kbuildtest.TestArm64KernelBuilds.test_defconfig
+#
+
 #
 # Note:
 #   If you don't have python3 try in python2... it will probably just work
@@ -191,6 +201,21 @@ class TestArm64KernelBuilds(KbuildSuite):
         self.make()
 
     def xtest_allmodconfig(self):
+        self.make()
+
+#
+# m68k
+#
+
+class TestM68kKernelBuilds(KbuildSuite):
+    def setUp(self):
+        self.setUpAndApplyConfig('m68k', 'm68k-linux-',
+            '/opt/crosstool/gcc-4.9.0-nolibc/m68k-linux')
+
+    def test_defconfig(self):
+        self.make()
+
+    def test_allmodconfig(self):
         self.make()
 
 #
