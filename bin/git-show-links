@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+
+#
+# git-show-links
+#
+# Process a specially formed text file into a ready-to-go patch series.
+#
+
+# Structure is:
+
+# Subject: Name of patch series
+# Branch: Local branch (for error checking)
+#
+# --- cut here ---
+#
+# Description of the patch series goes here...
+#
+# ... and can be many paragraphs.
+#
+# --- cut here ---
+#
+# git format-patch \
+#     --with=arguments \
+#     --to=generate \
+#     something..sensible
+#
+# v1: <mail-reference-for-old-patch-series>
+# v1: http://link.to.old.patch.series
+#
+# Anything you want can come after the blank line. It will be ignored
+# by the tool.
+
+from __future__ import print_function
+import fnmatch, shlex, os, re, subprocess, sys
+
+def readfile(fname):
+	contents = []
+	f = open(fname, 'r')
+	for ln in f.readlines():
+		ln = ln.rstrip()
+		contents.append(ln)
+	f.close()
+	return contents
+
+def shell(cmd):
+	'''Run a shell command and capture any output.'''
+	try:
+		output = subprocess.check_output(cmd, shell=True)
+		returncode = 0
+	except subprocess.CalledProcessError as ex:
+		output = ex.output
+		returncode = ex.returncode
+	output = output.decode(encoding='UTF-8').rstrip().split('\n')
+	if len(output) == 0 or (len(output) == 1 and output[0] == ''):
+		output = None
+	return (returncode, output)
+
+def parse_header(ln, attr):
+	if ':' not in ln:
+		return False
+
+	(name, value) = ln.split(':', 1)
+	attr[name] = value.strip()
+	return True
+
+def parse_cover(ln, c):
+	if len(ln) == 0 and len(c) == 0:
+		return True
+	if ln.startswith('--- cut here '):
+		return len(c) == 0
+	if ln.startswith('git ') and len(c) == 0:
+		return False
+	
+	c.append(ln)
+	return True
+
+def parse_format_patch(ln, fp):
+	if ln.startswith('--- cut here '):
+		return True
+	if len(ln) == 0:
+		return len(fp) == 0
+
+	fp.append(ln)
+	return True
+
+def parse_xrefs(ln, x):
+	if len(ln) == 0:
+		return True
+
+	if re.match('^[^ :]+: +[<].*@.*[>]$', ln):
+		x.append(ln)
+		return True
+
+	if re.match('^[^ :]: http', ln):
+		x.append(ln)
+		return True
+
+	return False
+
+#
+# Initialize accumulator variables
+#
+
+errors = []
+warnings = []
+section = "header"
+attributes = {}
+blurb = []
+format_patch = []
+xrefs = []
+
+#
+# Extract information from the description file
+#
+
+if len(sys.argv) > 1:
+	manifest = sys.argv[1]
+else:
+	print("Auto-detecting release manifest:")
+	# Try to figure out what file to use based on the current git Branch
+	branch = subprocess.check_output('git symbolic-ref HEAD | ' +
+					     "sed -e 's:refs/heads/::'",
+					 shell=True)
+	branch = branch.decode(encoding='UTF-8').rstrip()
+	(res, fnames) = shell(("grep -l '[Bb]ranch: *%s' " +
+			"$HOME/Documents/Wiki/*.wiki") % (branch,))
+	if 0 != res:
+		print('Cannot find description for branch %s' %
+				(branch,), file=sys.stderr)
+		sys.exit(1)
+	if len(fnames) > 1:
+		print('Ambiguous branch. Candidates are:', file=sys.stderr)
+		for fname in fnames:
+			print('    ' + shlex.quote(fname), file=sys.stderr)
+		sys.exit(1)
+	manifest = fnames[0]
+	print(shlex.quote(manifest))
+	print()
+
+f = open(manifest, 'r')
+
+for ln in f.readlines():
+	ln = ln.rstrip()
+
+	if section == "header":
+		if not parse_header(ln, attributes):
+			section = "cover"
+	if section == "cover":
+		if not parse_cover(ln, blurb):
+			section = "format_patch"
+	if section == "format_patch":
+		if not parse_format_patch(ln, format_patch):
+			section = "xrefs"
+	if section == "xrefs":
+		if not parse_xrefs(ln, xrefs):
+			break
+f.close()
+
+#
+# Check the branch
+#
+
+if 'Branch' in attributes:
+	status = subprocess.call('git symbolic-ref HEAD | ' +
+				     "grep -q 'refs/heads/%s$'"
+			% (attributes['Branch'],), shell=True)
+	if status != 0:
+		print("WARNING: Current branch is not " + attributes['Branch'])
+
+#
+# Convert release tags into http references
+#
+
+print("Links:\n")
+for xref in xrefs:
+	xref = re.sub('(^[^ :]+: )+[<](.*@.*)[>]$', '\\1http://mid.gmane.org/\\2', xref)
+	print(xref)
+
+#
+# Report warnings and errors
+#
+
+if len(warnings):
+	print("\nWarnings:")
+	print('\n'.join(warnings))
+if len(errors):
+	print("\nErrors:")
+	print('\n'.join(errors))
+	sys.exit(2)
