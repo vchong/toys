@@ -1,0 +1,26 @@
+#!/bin/sh
+
+#
+# ubootargs
+#
+# Create a uboot script to set the bootargs environment variable.
+#
+
+imgname=ubootargs.img
+
+while getopts o: opt
+do
+    case "$opt" in
+      o)  imgname="$OPTARG";;
+      \?)
+      	  echo >&2 \
+	  "usage: ubootargs [-o imgname] [cmdline ...]"
+	  exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+scrname=`dirname $imgname`/`basename $imgname .img`.scr
+
+echo setenv bootargs "$@" > $scrname
+mkimage -T script -C none -n bootconf -d "$scrname" "$imgname"
