@@ -17,7 +17,7 @@ import sys
 def run(cmd):
 	"""Run a command (synchronously) raising an exception on
 	failure.
-	
+
 	"""
 	print(cmd)
 	(exit_code) = os.system(cmd)
@@ -62,7 +62,7 @@ def build(cmds=()):
 		run('make CC="ccache %sgcc" -j 24' % (os.environ['CROSS_COMPILE'],))
 		run('make INSTALL_MOD_PATH=/opt/debian/jessie-armel-rootfs modules_install')
 	except:
-		skip("Cannot compile")		
+		skip("Cannot compile")
 
 def telnet(host, port=23, logfile=sys.stdout):
 	"""Connect to telnet socket with automatic failure reporting."""
