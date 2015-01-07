@@ -112,8 +112,12 @@ class KbuildSuite(unittest.TestCase):
                      'KGDB', 'KGDB_KDB'))
 
     def make(self, cmd=''):
-        exit_code = os.system('make -C %s -j 24 %s >> %s/lastbuild.log 2>&1'
-            % (self.objdir, cmd, self.objdir))
+	if 'JOBS' in os.environ:
+	    jobs = os.environ['JOBS']
+	else:
+	    jobs = 24
+        exit_code = os.system('make -C %s -j %s %s >> %s/lastbuild.log 2>&1'
+            % (self.objdir, jobs, cmd, self.objdir))
         self.assertEqual(0, exit_code,
             'Build failed: See "%s/lastbuild.log"' % (self.objdir))
 
