@@ -1,0 +1,42 @@
+#!/bin/bash
+
+#
+# netcom
+#
+# Combine socat and picocom to attach to a raw network socket. In many ways
+# this is similar to telnet but makes no attempt to be clever w.r.t. local
+# echo (and this is what you want if you want if you are connecting to a
+# raw network socket).
+#
+
+# check arguments
+if [ $# -ne 2 ]
+then
+	echo "USAGE: netcom <host> <port>" >&2
+	exit 1
+fi
+
+# configuration
+host="$1"
+port="$2"
+link="$HOME/.netcom/pty.$$"
+
+# create a pty with a named soft-link, waitslave will defer connection to the
+# network until the pty is opened (and also causes socat to exit when the pty
+# is closed)
+mkdir -p `dirname "$link"`
+rm -f "$link"
+socat "pty,link=$link,waitslave" "tcp:$host:$port" &
+
+# wait for the pty to be ready
+while [ ! -e "$link" ]
+do
+	usleep 1000
+done
+
+# connect to the pty, disable locking so we don't need to run as root
+picocom --nolock "$link"
+
+# clean up the soft-link and wait for socat to exit
+rm -f "$link"
+wait
