@@ -172,11 +172,11 @@ done
 if  [ ! -z "$args" ]
 then
 	echo scripts/config $args
-	/home/drt/Development/Kernel/linux/scripts/config $args
-fi
+	$config $args
 
-if [ $? -eq 0 ] && [ -z $manual ]
-then
-	echo make olddefconfig
-	make olddefconfig
+	if [ $? -eq 0 ] && [ -z $manual ]
+	then
+		echo make olddefconfig
+		make olddefconfig
+	fi
 fi
