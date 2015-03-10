@@ -115,7 +115,7 @@ class KbuildSuite(unittest.TestCase):
         if 'JOBS' in os.environ:
             jobs = os.environ['JOBS']
         else:
-            jobs = 24
+            jobs = 4
         exit_code = os.system('make -C %s -j %s %s >> %s/lastbuild.log 2>&1'
             % (self.objdir, jobs, cmd, self.objdir))
         self.assertEqual(0, exit_code,
@@ -248,6 +248,12 @@ class TestX86KernelBuilds(KbuildSuite):
 
     def test_defconfig(self):
         self.make()
+        self.config(disable='NFSD')
+	self.config(enable='NFSD')
+        self.config(enable='NFSD_V4')
+        self.config(enable='NFSD_PNFS')
+        self.config(enable='NFSD_V3')
+        self.config(disable='NFSD_V4')
 
     def test_defconfig_kgdb(self):
         self.config_kgdb()
