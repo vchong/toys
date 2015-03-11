@@ -19,9 +19,9 @@ TARGETIP='192.168.1.39'
 class TestKdbKiosk(unittest.TestCase):
 	"""A collection of tests for kdb's kiosk mode.
 
-	This suite is based on two pexpect sessions. One, the uart, is 
-	pointed at the serial port and is used to interact with kdb, 
-	the other, the manager, is pointed at an SSH session on the 
+	This suite is based on two pexpect sessions. One, the uart, is
+	pointed at the serial port and is used to interact with kdb,
+	the other, the manager, is pointed at an SSH session on the
 	system-under-test (target).
 
 	The SSH session is used to change sysfs settings, to make other
@@ -194,7 +194,69 @@ class TestKdbKiosk(unittest.TestCase):
 		self.mgr.prompt()
 		self.mgr.sendline('echo 1 > /proc/sys/kernel/sysrq')
 		self.mgr.prompt()
-		
+
+	def xtestSeqFileCpuinfo(self):
+		self.sendCommand('seq_file cpuinfo_op')
+		i = self.uart.expect(['processor', 'BUG'])
+		self.assertEqual(i, 0)
+		self.uart.expect('more> ')
+		self.uart.send('q')
+		self.prompt()
+
+	def xtestSeqFileCpuinfo(self):
+		self.sendCommand('seq_file cpuinfo_op')
+		i = self.uart.expect(['processor', 'BUG'])
+		self.assertEqual(i, 0)
+
+	def xtestSeqFileCpuinfo(self):
+		self.sendCommand('seq_file cpuinfo_op')
+		i = self.uart.expect(['processor', 'BUG'])
+		self.assertEqual(i, 0)
+
+	def xtestSeqFileExtfrag(self):
+		self.sendCommand('seq_file extfrag_op')
+		i = self.uart.expect(['Node', 'BUG'])
+		self.assertEqual(i, 0)
+
+	def xtestSeqFileFragmentation(self):
+		self.sendCommand('seq_file fragmentation_op')
+		i = self.uart.expect(['Node', 'BUG'])
+		self.assertEqual(i, 0)
+
+	def xtestSeqFileGpiolib(self):
+		self.sendCommand('seq_file gpiolib_seq_ops')
+		i = self.uart.expect(['GPIOs', 'BUG'])
+		self.assertEqual(i, 0)
+
+	def xtestSeqFileInterrupts(self):
+		self.sendCommand('seq_file int_seq_ops')
+		i = self.uart.expect(['CPU', 'BUG'])
+		self.assertEqual(i, 0)
+
+	def xtestSeqFilePageTypeInfo(self):
+		self.sendCommand('seq_file pagetypeinfo_op')
+		i = self.uart.expect(['Page', 'BUG'])
+		self.assertEqual(i, 0)
+
+	def xtestSeqFileUnusable(self):
+		self.sendCommand('seq_file unusable_op')
+		i = self.uart.expect(['Node', 'BUG'])
+		self.assertEqual(i, 0)
+
+	def xtestSeqFileVmalloc(self):
+		self.sendCommand('seq_file vmalloc_op')
+		i = self.uart.expect(['-0x', 'BUG'])
+		self.assertEqual(i, 0)
+		# TODO: Remove this once the tear down can absorb all
+		#       the data this command produces.
+		self.uart.expect('more> ')
+		self.sendCommand('q')
+		self.prompt
+
+	def xtestSeqFileCpuinfo(self):
+		self.sendCommand('seq_file zoneinfo_op')
+		i = self.uart.expect(['Node', 'BUG'])
+		self.assertEqual(i, 0)
 
 if __name__ == '__main__':
 	unittest.main()
