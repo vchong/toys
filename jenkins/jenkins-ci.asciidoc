@@ -55,6 +55,53 @@ sudo systemctl start jenkins
 firefox localhost:8080
 ........
 
+Initial install with tomcat (Fedora)
+------------------------------------
+
+Using tomcat as a container yields greater flexibility as other webapps can
+be easily hosted on the same ports.
+
+. Install tomcat
++
+........
+sudo yum install tomcat tomcat-webapps tomcat-admin-webapp tomcat-docs-webapp
+........
+
+. Create an admin user for tomcat.
++
+  Edit +/etc/tomcat/tomcat-users.xml+ and
+  uncomment the admin user (password for admin is plain text so don't give
+  same password as root).
+
+. Generate an SSL key for tomcat.
++
+........
+sudo -u tomcat keytool -genkey -alias tomcat -keyalg RSA
+# Set the password to "changeit"
+........
+
+. Serve tomcat to the network using SSL on port 8443.
++
+  Edit +/etc/tomcat/server.xml+, uncomment SSL support (search for
+  Connector port="8443"), modify the 8080 Connector to include
+  +address="127.0.0.1"+ (this only allows non-encrypted access from
+  localhost - this allows scripts to kick jenkins without allowing
+  wider non-encrypted access).
+
+. Enable UTF-8 for tomcat.
++
+  Edit +/etc/tomcat/server.xml+, modify both Connector:s to include
+  +URIEncoding="UTF-8"+.
+
+. Download +jenkins.war+ and copy to /var/lib/tomcat/webapps
+
+. Edit +/etc/tomcat/tomcat.conf+, set +JENKINS_HOME=/var/lib/jenkins+ and
+  add +-Xmx512m+ to the list of +JAVA_OPTS+.
+
+. +sudo mkdir /var/lib/jenkins && chown tomcat.tomcat /var/lib/jenkins+
+
+. +sudo systemctl enable tomcat && sudo systemctl start tomcat+
+
 Handling http proxies
 ---------------------
 
@@ -131,6 +178,8 @@ helper program and make it available to jenkins.
  . +sudo groupmems --add jenkins --group apache+
  . +sudo systemctl restart jenkins+
 
+NOTE: If hosting in tomcat use +tomcat+ rather than +jenkins+ as the username.
+
 Install the pw-auth plugin:
 
  . Click *Jenkins* -> *Manage Jenkins* -> *Manage Plugins*
@@ -158,8 +207,34 @@ You will be prompted to login. Use your normal Unix password to do this.
 
 [NOTE]
 ==========
-Currently (March 2013) there is a bug in the pw-auth plugin such that the
+Currently (March 2015) there is a bug in the pw-auth plugin such that the
 *Path to pwauth* is not honoured after Jenkins restarts. This can be worked around as follows:
 
  . +sudo ln -s ../../bin/pwauth /usr/local/bin/pwauth+
 ==========
+
+Configuring e-mail notification
+-------------------------------
+
+jenkins can be trivially interfaced to gmail, allowing it to send status
+e-mails:
+
+ . Click *Jenkins* -> *Manage Jenkins* -> *Configure System*
+ . Scoll down to *E-mail Notification*
+ . *SMTP server*: +smtp.gmail.com+
+ . Click *Advanced*
+ . *User Name*: +yourname@linaro.org+
+ . *Password*: +yourpassword+ (or an app password if you have two-factor
+   authentication enabled)
+ . Check *Use SSL*
+ . *SMTP Port*: +465+
+ . *Reply-To Address*: +no-reply@linaro.org+
+ . Check *Test configuration by sending test e-mail*
+ . Set *Test e-mail recipient* and click *Test configuration*
+ . Click *Save*
+
+NOTE: It may be necessary to edit
++/usr/lib/jvm/jre-1.8.0-openjdk/lib/security/java.security+ and set
++jdk.tls.disabledAlgorithms=EC,ECDHE,ECDH+ to force negotiation of an
+acceptable (and in this case, patent-free) crypto algorithm.
+
