@@ -1,0 +1,9 @@
+#!/bin/sh
+
+if [ $# -lt 1 ]
+then
+	echo "Usage: git fixup <upstream> [<branch>]" >&2
+	exit 1
+fi
+
+git commit -am "Fixup" && git rebase -i "$@"
