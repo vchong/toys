@@ -249,7 +249,7 @@ class TestX86KernelBuilds(KbuildSuite):
     def test_defconfig(self):
         self.make()
         self.config(disable='NFSD')
-	self.config(enable='NFSD')
+        self.config(enable='NFSD')
         self.config(enable='NFSD_V4')
         self.config(enable='NFSD_PNFS')
         self.config(enable='NFSD_V3')
