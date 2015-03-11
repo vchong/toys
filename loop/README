@@ -1,0 +1,63 @@
+loop-alloc
+==========
+
+Boot service that allocates loop devices regardless of the value of
+CONFIG_BLK_DEV_LOOP_MIN_COUNT. Forcing loop devices to exist allows
+them to be passed as block devices into virtual machines or containers.
+
+For example to enable loop device support for libvirt's LXC driver the
+following is added to the domain XML but libvirt will error out if
+the devices do not already exist:
+
+    <hostdev mode='capabilities' type='misc'>
+      <source>
+        <char>/dev/loop-control</char>
+      </source>
+    </hostdev>
+    <hostdev mode='capabilities' type='storage'>
+      <source>
+        <block>/dev/loop0</block>
+      </source>
+    </hostdev>
+    <hostdev mode='capabilities' type='storage'>
+      <source>
+        <block>/dev/loop1</block>
+      </source>
+    </hostdev>
+    <hostdev mode='capabilities' type='storage'>
+      <source>
+        <block>/dev/loop2</block>
+      </source>
+    </hostdev>
+    <hostdev mode='capabilities' type='storage'>
+      <source>
+        <block>/dev/loop3</block>
+      </source>
+    </hostdev>
+    <hostdev mode='capabilities' type='storage'>
+      <source>
+        <block>/dev/loop4</block>
+      </source>
+    </hostdev>
+    <hostdev mode='capabilities' type='storage'>
+      <source>
+        <block>/dev/loop5</block>
+      </source>
+    </hostdev>
+    <hostdev mode='capabilities' type='storage'>
+      <source>
+        <block>/dev/loop6</block>
+      </source>
+    </hostdev>
+    <hostdev mode='capabilities' type='storage'>
+      <source>
+        <block>/dev/loop7</block>
+      </source>
+    </hostdev>
+
+loop-alloc.service is a systemd unit that ensures the loop devices are
+allocated before libvirtd starts up (making it possible for machine like
+the above to be autostarted.
+
+    sudo cp loop-alloc.service /etc/systemd/system
+    sudo systemctl enable loop-alloc

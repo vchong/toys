@@ -1,0 +1,8 @@
+[Unit]
+Description=Loop device allocator
+
+[Service]
+ExecStart=/usr/local/bin/loop-alloc
+
+[Install]
+WantedBy=libvirtd.service
