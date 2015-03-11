@@ -59,6 +59,30 @@ def insert_kernel_version(input):
 		output.append(ln)
 	return output
 
+def strip_notes(input):
+	output = []
+	in_notes = False
+	done = False
+	for ln in input:
+		if done:
+			output.append(ln)
+			continue
+
+		if ln == '---':
+			in_notes = True
+			output.append(ln)
+			continue
+
+		if in_notes:
+			if not ln.startswith('    ') and not ln == '' and not ln == 'Notes:':
+				done = True
+				in_notes = False
+			else:
+				continue
+
+		output.append(ln)
+	return output
+
 def strip_diffstat(input):
 	output = []
 	in_diffstat = False
@@ -93,6 +117,7 @@ for patch in sys.argv[1:]:
 	lines = remove_header(lines, 'Cc: ')
 	lines = insert_new_to(lines, 'patches@arm.linux.org.uk')
 	lines = insert_kernel_version(lines)
+	lines = strip_notes(lines)
 	lines = strip_diffstat(lines)
 
 	f = open(patch, 'w')
