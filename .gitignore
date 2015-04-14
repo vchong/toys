@@ -1,8 +1,5 @@
 *.pyc
 .*.swp
 *~
-jenkins/html/jenkins-ci.html
-jenkins/rdiff-backup
-jenkins/rdiff-backup.o
 loop/loop-alloc.o
 loop/loop-alloc

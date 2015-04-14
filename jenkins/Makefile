@@ -10,8 +10,9 @@ ASCIIDOCFILES = $(wildcard *.asciidoc)
 IMAGEFILES = $(wildcard images/*)
 HTMLFILES = $(foreach f, $(ASCIIDOCFILES), html/$(f:.asciidoc=.html))
 
-APPS = rdiff-backup
+APPS = rdiff-backup btrfs_time_machine
 RDIFF_BACKUP_OBJS = rdiff-backup.o
+BTRFS_TIME_MACHINE_OBJS = btrfs_time_machine.o
 
 all : $(HTMLFILES) $(APPS)
 
@@ -22,6 +23,9 @@ html/jenkins-ci.html : EXTRAASCIIDOCFLAGS=-n
 
 rdiff-backup : $(RDIFF_BACKUP_OBJS)
 	$(CC) $(CFLAGS) $(RDIFF_BACKUP_OBJS) -o $@
+
+btrfs_time_machine : $(BTRFS_TIME_MACHINE_OBJS)
+	$(CC) $(CFLAGS) $(BTRFS_TIME_MACHINE_OBJS) -o $@
 
 # sed is used to workaround a known bug in asciidoc-8.6.8 MIME type handling,
 # the bug is already fixed in asciidoc mainline but not yet released.

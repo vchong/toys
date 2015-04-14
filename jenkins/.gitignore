@@ -1,0 +1,5 @@
+*.o
+
+btrfs_time_machine
+rdiff-backup
+html/jenkins-ci.html
