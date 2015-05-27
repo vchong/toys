@@ -61,7 +61,7 @@ do
 
 	# udev, systemd
 	modernize|--modernize)
-		args="$args --enable TMPFS --enable DEVTMPFS --enable CGROUPS --module AUTOFS4_FS --module IPV6"
+		args="$args --enable TMPFS --enable DEVTMPFS --enable CGROUPS --enable FHANDLE --module AUTOFS4_FS --module IPV6"
 		;;
 
 	# Native language support (needed to mount various FAT
@@ -151,6 +151,17 @@ do
 
 		# Disable IWMMXT
 		args="$args --disable IWMMXT"
+		;;
+
+	# Bring in a bunch of popular USB network adapters
+	usbnet|--usbnet)
+		args="$args --enable USB_NET_DRIVERS"
+		args="$args --enable USB_USB_PEGASUS"
+		args="$args --enable USB_RTL8150"
+		args="$args --enable USB_RTL8152"
+		args="$args --enable USB_USBNET"
+		args="$args --enable USB_NET_AX8817X"
+		args="$args --enable USB_NET_AX88179_178A"
 		;;
 
 	manual|--manual)

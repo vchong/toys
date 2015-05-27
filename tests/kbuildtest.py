@@ -115,7 +115,7 @@ class KbuildSuite(unittest.TestCase):
         if 'JOBS' in os.environ:
             jobs = os.environ['JOBS']
         else:
-            jobs = 4
+            jobs = os.sysconf('SC_NPROCESSORS_ONLN')
         exit_code = os.system('make -C %s -j %s %s >> %s/lastbuild.log 2>&1'
             % (self.objdir, jobs, cmd, self.objdir))
         self.assertEqual(0, exit_code,

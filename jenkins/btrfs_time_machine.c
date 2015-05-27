@@ -32,7 +32,7 @@ void verify_failed(const char *t)
 void scrub_environment(void)
 {
 	clearenv();
-	putenv("PATH=/bin:/usr/bin");
+	putenv("PATH=/sbin:/bin:/usr/sbin:/usr/bin");
 }
 
 char *xstrdup_printf(const char *fmt, ...)
@@ -71,6 +71,7 @@ int main(int argc, char * const argv[])
 	exe[len] = '\0';
 	char *dir = dirname(exe);
 
+#if 0
 	/* derive the name of the executable we must launch */
 	char *tm = xstrdup_printf("%s/time_machine", dir);
 	
@@ -81,7 +82,17 @@ int main(int argc, char * const argv[])
 	eargv[eargc] = NULL;
 	assert(eargc < (sizeof(eargv) / sizeof(eargv[0])));
 
+	/* change effective uid/gid (otherwise ruby sub-processes will not
+	 * have root access)
+	 */
+	verify(seteuid(0) == 0);
+	verify(setegid(0) == 0);
+
 	execv(tm, eargv);
 	fprintf(stderr, "ERROR: Failed to load new process image\n");
 	return 1;
+#else
+	nt res = system(xstrdup_printf("su -c %s/time_machine", dir));
+	return res;
+#endif
 }
