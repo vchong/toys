@@ -3,9 +3,26 @@
 #
 # weekly-report
 #
-# Extract JIRA status to generate a template weekly report.
+# Extract JIRA status to generate a template weekly report
 #
- 
+
+#
+# TODO: 
+#
+#  - Add command line processing (configurable time windows,
+#    include URL in draft versions of reports to make it quicker
+#    to update engineering status fields, restrict to single
+#    engineer).
+#
+#  - Improve processing of idiomatic text from engineering status
+#    field (more flexibility on numbers, stripping out of dates to
+#    I don't have to manually reflow text).
+#
+#  - Bring the final loops into the report class.
+#
+#  - Include KWG cards assigned to me in the report.
+#
+
 from __future__ import print_function
 import datetime
 from jira.client import JIRA
@@ -14,6 +31,17 @@ import re
 import textwrap
 import sys
 
+#
+# Collection of find/replace strings to massage a summary for
+# readability.
+#
+# Ideally all we would do with hacks is strip our redundant idioms
+# such as including the issuetype in the summary.
+#
+# However for now we go a bit deeper and try to remove other
+# redundant information from the summary (such as member name) or
+# excessive use of verbs.
+#
 hacks = (
 	('CARD:', ''),
 	('BLUEPRINT:', ''),
@@ -23,7 +51,8 @@ hacks = (
 	('and its relationship to', 'and'),
 	('for u-boot/linux for', 'for'),
 	('Execute initial test plan ltp-ddt test cases to LAVA for BBB',
-		'LTP-DDT: Initial LAVA integration (using BBB)')
+		'LTP-DDT: Initial LAVA integration (using BBB)'),
+	('ZTE power management', 'Power management')
 )
 
 def warn(issue, msg):
@@ -31,6 +60,156 @@ def warn(issue, msg):
 			initial_indent=   'WARNING: ',
 			subsequent_indent='         ')
 	print('\n'.join(lines))
+
+class Issue(object):
+	re_ymd = re.compile('(20[0-9][0-9]).?([0-9][0-9]).?([0-9][0-9])')
+
+	def __init__(self, issue):
+		self._raw = issue
+
+		summary = issue.fields.summary
+		for (old, new) in hacks:
+			summary = summary.replace(old, new)
+		self.summary = summary.strip()
+
+		self.assignees = set((issue.fields.assignee.displayName,))
+		self.fields = issue.fields
+		self.engineering_status = issue.fields.customfield_10204
+		self.key = issue.key
+		if self.is_blueprint():
+			self.parent = issue.fields.customfield_10301
+		self.url = 'https://cards.linaro.org/browse/' + issue.key
+
+	def is_blueprint(self):
+		return self.fields.issuetype.name == 'Blueprint'
+
+	def is_card(self):
+		return self.fields.issuetype.name == 'Engineering card'
+
+	def categorize(self):
+		lookup = {
+			'Open': (),
+			'TODO': ('Plan',),
+			'In Progress' : ('Plan', 'Progress'),
+			'Resolved' : ('Progress',),
+			'Closed' : ('Progress',),
+		}
+
+		if self.fields.status.name in lookup:
+			return set(lookup[self.fields.status.name])
+
+		warn(self, 'has bad status ({})'.format(self.fields.status.name))
+		return set()
+
+	@staticmethod
+	def cmp_by_key(x, y):
+		return cmp(x.key, y.key)
+
+	def fmt_assignees(self):
+		msg = ""
+		for a in sorted(self.assignees):
+			msg += ", {}".format(a.partition(' ')[0])
+		return msg.lstrip(', ')
+
+	def _fmt_engineering_status(self, filt):
+		es = self.engineering_status
+		if es == None:
+			return ()
+
+		es = es.replace('\r', '')
+		es = [ln.replace('plans: ', '') for ln in es.split('\n') if filt(ln)]
+
+		return es
+
+	def fmt_engineering_status(self, max_age):
+		def is_current(ln):
+			if len(ln) == 0:
+				return False
+
+			match = re.search(self.re_ymd, ln)
+			if match:
+				try:
+					tstamp = datetime.datetime(
+							int(match.group(1)),
+							int(match.group(2)),
+							int(match.group(3)))
+					age = tstamp.now() - tstamp
+					if age.days > max_age:
+						return False
+					return True
+				except ValueError:
+					warn(self, 'contains bad date ({})'.format(
+						match.group(0)))
+		
+			if ln.startswith("plan"):
+				return False
+
+			warn(self, 'has missing date in engineering status')
+			return True
+
+		return self._fmt_engineering_status(is_current)
+
+	def fmt_engineering_plans(self):
+		def is_plan(ln):
+			return ln.startswith("plan")
+
+		return self._fmt_engineering_status(is_plan)
+
+	def fmt_summary(self, member):
+		return '{}: {} [{}] ({})'.format(member, self.summary, 
+				self.fmt_assignees(), self.key)
+
+class Report(object):
+	wrappers = (
+		textwrap.TextWrapper(),
+		textwrap.TextWrapper(initial_indent=' * ', subsequent_indent='   '),
+		textwrap.TextWrapper(initial_indent='   - ', subsequent_indent='     ')
+	)
+
+	def __init__(self):
+		self.issues = {}
+		self.cards = {}
+		self.blueprints = {}
+		self.members = {}
+
+	def add(self, raw):
+		issue = Issue(raw)
+		self.issues[issue.key] = issue
+
+		if issue.is_blueprint():
+			self.blueprints[issue.key] = issue
+		elif issue.is_card():
+			self.cards[issue.key] = issue
+
+			if len(issue.fields.components) == 0:
+				warn(issue, 'has no component')
+			for m in issue.fields.components:
+				if m.name not in self.members:
+					self.members[m.name] = []
+				self.members[m.name].append(issue)
+			issue.blueprints = []
+		else:
+			warn(self, 'has unexpected issuetype {}'.format(
+				self.fields.issuetype.name))
+	
+	def link_blueprints(self):
+		'''Iterate over the blueprints and link them to their cards.'''
+		for b in self.blueprints.itervalues():
+			if b.parent == None:
+				warn(b, 'is not linked to an EPIC')
+				continue
+			elif b.parent not in report.cards:
+				warn(b, 'is linked to non-existant {}'.format(b.parent))
+				continue
+	
+			card = report.cards[b.parent]
+			card.assignees.add(b.fields.assignee.displayName)
+			card.blueprints.append(b)
+	
+	@staticmethod
+	def print(msg, level=0):
+		print('\n'.join(Report.wrappers[level].wrap(msg)))
+
 
 # Connect to the server
 server = 'https://cards.linaro.org'
@@ -44,142 +223,33 @@ jira = JIRA(options={'server': server}, basic_auth=(username, password))
 query = 'project = "Premium Services" AND (statusCategory != Complete OR updatedDate >= -7d)'
 all = jira.search_issues(query)
 
-# Grab each cards and sift them into blueprints and cards
-cards = {}
-blueprints = {}
+# Grab each card and add them to the report
+report = Report()
 for id in all:
-	issue = jira.issue(id)
-
-	# Massage the summary
-	issue.summary = issue.fields.summary
-	for (old, new) in hacks:
-		issue.summary = issue.summary.replace(old, new)
-	issue.summary = issue.summary.strip()
-	issue.url = 'https://cards.linaro.org/browse/' + issue.key
-
-	if issue.fields.issuetype.name == 'Blueprint':
-		blueprints[issue.key] = issue
-	elif issue.fields.issuetype.name == 'Engineering card':
-		cards[issue.key] = issue
-	else:
-		warn(issue, 'has unexpected issuetype {}'.format(
-				issue.fields.issuetype.name))
-
-# Iterate of the cards and organise them by member
-members = {}
-for c in cards.itervalues():
-	if len(c.fields.components) == 0:
-		warn(c, 'has no component')
-	for m in c.fields.components:
-		if m.name not in members:
-			members[m.name] = []
-		members[m.name].append(c)
-	c.assignees = set((c.fields.assignee.displayName,))
-	c.blueprints = []
-
-# Iterate over the blueprints and link them to their cards
-for b in blueprints.itervalues():
-	parent = b.fields.customfield_10301
-	if parent == None:
-		warn(b, 'is not linked to an EPIC')
-		continue
-	elif parent not in cards:
-		warn(b, 'is linked to non-existant {}'.format(parent))
-		continue
-	
-	card = cards[parent]
-	card.assignees.add(b.fields.assignee.displayName)
-	card.blueprints.append(b)
-
-def cmp_key(x, y):
-	return cmp(x.key, y.key)
-
-def fmt_assignees(assignees):
-	msg = ""
-	for a in sorted(assignees):
-		msg += ", {}".format(a.partition(' ')[0])
-	return msg.lstrip(', ')
-
-re_ymd = re.compile('(20[0-9][0-9]).([0-9][0-9]).([0-9][0-9])')
-
-def fmt_engineering_status(issue):
-	def is_current(ln):
-		if len(ln) == 0:
-			return False
-
-		match = re.search(re_ymd, ln)
-		if match:
-			try:
-				tstamp = datetime.datetime(
-						int(match.group(1)),
-						int(match.group(2)),
-						int(match.group(3)))
-				age = tstamp.now() - tstamp
-				if age.days > 8:
-					return False
-				return True
-			except ValueError:
-				warn(issue, 'contains bad date ({})'.format(
-					match.group(0)))
-	
-		warn(issue, 'has missing date in engineering status')
-		return True
-
-	es = issue.fields.customfield_10204
-	if es == None:
-		return ()
-
-	es = es.replace('\r', '')
-	es = es.split('\n')
-	es = [ln for ln in es if is_current(ln)]
-
-	return es
-
-def categorize(issue):
-	lookup = {
-		'Open': (),
-		'TODO': ('Plan',),
-		'In Progress' : ('Plan', 'Progress'),
-		'Resolved' : ('Progress',),
-		'Closed' : ('Progress',),
-	}
-
-	if issue.fields.status.name in lookup:
-		return set(lookup[issue.fields.status.name])
-
-	warn(issue, 'has bad status ({})'.format(issue.fields.status.name))
-	return set()
-
-card_wrapper = textwrap.TextWrapper(
-		initial_indent=' * ',
-		subsequent_indent='   ')
-bp_wrapper = textwrap.TextWrapper(
-		initial_indent='   - ',
-		subsequent_indent='     ')
+	report.add(jira.issue(id))
+report.link_blueprints()
 
 # Construct the weekly report skeleton
 
-print('## Progress')
-for member in sorted(members.iterkeys()):
-	for card in sorted(members[member], cmp_key):
-		print('\n' + '\n'.join(
-			card_wrapper.wrap('{}: {} [{}] ({})'.format(
-				member, card.summary, 
-				fmt_assignees(card.assignees), card.key))))
-		for ln in fmt_engineering_status(card):
-			print('\n'.join(bp_wrapper.wrap(ln)))
-		for bp in sorted(card.blueprints, cmp_key):
-			if 'Progress' in categorize(bp):
-				print('\n'.join(bp_wrapper.wrap(bp.summary)))
+report.print('## Progress')
+for member in sorted(report.members.iterkeys()):
+	for card in sorted(report.members[member], Issue.cmp_by_key):
+		report.print('\n')
+		report.print(card.fmt_summary(member), level=1)
+		for ln in card.fmt_engineering_status(max_age=8):
+			report.print(ln, level=2)
+		for bp in sorted(card.blueprints, Issue.cmp_by_key):
+			if 'Progress' in bp.categorize():
+				report.print(bp.summary, level=2)
 
-print('\n## Plans')
+report.print('\n## Plans')
 
-for member in sorted(members.iterkeys()):
-	for card in sorted(members[member], cmp_key):
-		print('\n' + '\n'.join(
-			card_wrapper.wrap('{}: {} [{}] ({})'.format(
-				member, card.summary, 
-				fmt_assignees(card.assignees), card.key))))
-		for bp in sorted(card.blueprints, cmp_key):
-			if 'Plan' in categorize(bp):
-				print('\n'.join(bp_wrapper.wrap(bp.summary)))
+for member in sorted(report.members.iterkeys()):
+	for card in sorted(report.members[member], Issue.cmp_by_key):
+		report.print('\n')
+		report.print(card.fmt_summary(member), level=1)
+		for ln in card.fmt_engineering_plans():
+			report.print(ln, level=2)
+		for bp in sorted(card.blueprints, Issue.cmp_by_key):
+			if 'Plan' in bp.categorize():
+				report.print(bp.summary, level=2)
