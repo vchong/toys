@@ -26,10 +26,25 @@
 from __future__ import print_function
 import datetime
 from jira.client import JIRA
+import iso8601
 import keyring
 import re
 import textwrap
 import sys
+
+class UTC(datetime.tzinfo):
+    ZERO = datetime.timedelta(0)
+
+    def utcoffset(self, dt):
+	return self.ZERO
+
+    def tzname(self, dt):
+        return "UTC"
+
+    def dst(self, dt):
+        return self.ZERO
+
+utc = UTC()
 
 #
 # Collection of find/replace strings to massage a summary for
@@ -63,6 +78,8 @@ def warn(issue, msg):
 
 class Issue(object):
 	re_ymd = re.compile('(20[0-9][0-9]).?([0-9][0-9]).?([0-9][0-9])')
+	re_progress = re.compile('^(h[123456]\.)?\s*[Pp]rogress')
+	re_plans = re.compile('^(h[123456]\.)?\s*[Pp]lans?')
 
 	def __init__(self, issue):
 		self._raw = issue
@@ -100,10 +117,6 @@ class Issue(object):
 
 		warn(self, 'has bad status ({})'.format(self.fields.status.name))
 		return set()
-
-	@staticmethod
-	def cmp_by_key(x, y):
-		return cmp(x.key, y.key)
 
 	def fmt_assignees(self):
 		msg = ""
@@ -158,6 +171,41 @@ class Issue(object):
 	def fmt_summary(self, member):
 		return '{}: {} [{}] ({})'.format(member, self.summary, 
 				self.fmt_assignees(), self.key)
+
+	def worklog(self, jira, age=None, recurse=False):
+		logs = []
+
+		for id in jira.worklogs(self.key):
+			logs.append(jira.worklog(self.key, id))
+
+		if recurse and self.is_card():
+			for bp in self.blueprints:
+				logs += bp.worklog(jira, age=age, recurse=True)
+
+		# Filter by date is requested
+		if age:
+			now = datetime.datetime.utcnow().replace(tzinfo=utc)
+			threshold = now - age
+			logs = [g for g in logs
+				if iso8601.parse_date(g.started) > threshold]
+
+		# Parse into progress and plans
+		for log in logs:
+			log.progress = []
+			log.plans = []
+			active = log.progress
+
+			for ln in log.comment.replace('\r', '').split('\n\n'):
+				ln = ln.replace('\n', ' ')
+				if re.match(self.re_progress, ln):
+					continue
+				if re.match(self.re_plans, ln):
+					active = log.plans
+					continue
+				active.append(ln)
+
+		# Return work log in time sorted order
+		return sorted(logs, key=lambda x: x.started)
 
 class Report(object):
 	wrappers = (
@@ -219,7 +267,7 @@ username = 'daniel.thompson@linaro.org'
 password = keyring.get_password(server, username)
 jira = JIRA(options={'server': server}, basic_auth=(username, password))
 
-# Collect the date we must summarize
+# Collect the data we must summarize
 query = 'project = "Premium Services" AND (statusCategory != Complete OR updatedDate >= -7d)'
 all = jira.search_issues(query)
 
@@ -231,25 +279,33 @@ report.link_blueprints()
 
 # Construct the weekly report skeleton
 
+age = datetime.timedelta(days=8)
+
 report.print('## Progress')
 for member in sorted(report.members.iterkeys()):
-	for card in sorted(report.members[member], Issue.cmp_by_key):
+	for card in sorted(report.members[member], key=lambda x: x.key):
 		report.print('\n')
 		report.print(card.fmt_summary(member), level=1)
 		for ln in card.fmt_engineering_status(max_age=8):
 			report.print(ln, level=2)
-		for bp in sorted(card.blueprints, Issue.cmp_by_key):
+		for log in card.worklog(jira, age=age, recurse=True):
+			for bullet in log.progress:
+				report.print(bullet, level=2)
+		for bp in sorted(card.blueprints, key=lambda x: x.key):
 			if 'Progress' in bp.categorize():
 				report.print(bp.summary, level=2)
 
 report.print('\n## Plans')
 
 for member in sorted(report.members.iterkeys()):
-	for card in sorted(report.members[member], Issue.cmp_by_key):
+	for card in sorted(report.members[member], key=lambda x: x.key):
 		report.print('\n')
 		report.print(card.fmt_summary(member), level=1)
 		for ln in card.fmt_engineering_plans():
 			report.print(ln, level=2)
-		for bp in sorted(card.blueprints, Issue.cmp_by_key):
+		for log in card.worklog(jira, age=age, recurse=True):
+			for bullet in log.plans:
+				report.print(bullet, level=2)
+		for bp in sorted(card.blueprints, key=lambda x: x.key):
 			if 'Plan' in bp.categorize():
 				report.print(bp.summary, level=2)
