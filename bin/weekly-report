@@ -24,6 +24,7 @@
 #
 
 from __future__ import print_function
+
 import datetime
 from jira.client import JIRA
 import iso8601
@@ -81,7 +82,7 @@ class Issue(object):
 	re_progress = re.compile('^(h[123456]\.|#+)?\s*[Pp]rogress')
 	re_plans = re.compile('^(h[123456]\.|#+)?\s*[Pp]lans?')
 
-	def __init__(self, issue):
+	def __init__(self, issue, jira):
 		self._raw = issue
 
 		summary = issue.fields.summary
@@ -99,6 +100,43 @@ class Issue(object):
 		if self.is_blueprint():
 			self.parent = issue.fields.customfield_10301
 		self.url = 'https://cards.linaro.org/browse/' + issue.key
+
+		self._get_comments(jira)
+		self._get_worklog(jira)
+	
+	def _get_comments(self, jira):
+		self.comments = []
+
+		for id in jira.comments(self.key):
+			self.comments.append(jira.comment(self.key, id))
+
+		# Interpret paragraphs
+		for comment in self.comments:
+			comment.comment = []
+			for ln in comment.body.replace('\r', '').split('\n\n'):
+				comment.comment.append(
+						ln.replace('\n', ' ').strip())
+
+	def _get_worklog(self, jira):
+		self.worklog = []
+
+		for id in jira.worklogs(self.key):
+			self.worklog.append(jira.worklog(self.key, id))
+
+		# Parse into progress and plans
+		for log in self.worklog:
+			log.progress = []
+			log.plans = []
+			active = log.progress
+
+			for ln in log.comment.replace('\r', '').split('\n\n'):
+				ln = ln.replace('\n', ' ').strip()
+				if re.match(self.re_progress, ln):
+					continue
+				if re.match(self.re_plans, ln):
+					active = log.plans
+					continue
+				active.append(ln)
 
 	def is_blueprint(self):
 		return self.fields.issuetype.name == 'Blueprint'
@@ -175,63 +213,34 @@ class Issue(object):
 		return '{}: {} [{}] ({})'.format(member, self.summary, 
 				self.fmt_assignees(), self.key)
 
-	def comments(self, jira, age=None, recurse=False):
-		comments = []
-
-		for id in jira.comments(self.key):
-			comments.append(jira.comment(self.key, id))
-
+	def fmt_comments(self, jira, age=None, recurse=False):
+		comments = list(self.comments)
 		if recurse and self.is_card():
 			for bp in self.blueprints:
-				comments += bp.comments(jira, age=age, recurse=True)
+				comments += bp.comments
 
-		# Filter by date as requested
+		# Filter by date if requested
 		if age:
 			now = datetime.datetime.utcnow().replace(tzinfo=utc)
 			threshold = now - age
 			comments = [g for g in comments
 				if iso8601.parse_date(g.updated) > threshold]
 
-		# Try to format it:
-		for comment in comments:
-			comment.comment = []
-			for ln in comment.body.replace('\r', '').split('\n\n'):
-				comment.comment.append(ln.replace('\n', ' ').strip())
-
 		# Return comments in time sorted order
 		return sorted(comments, key=lambda g: g.updated)
 
-	def worklog(self, jira, age=None, recurse=False):
-		logs = []
-
-		for id in jira.worklogs(self.key):
-			logs.append(jira.worklog(self.key, id))
-
+	def fmt_worklog(self, jira, age=None, recurse=False):
+		logs = list(self.worklog)
 		if recurse and self.is_card():
 			for bp in self.blueprints:
-				logs += bp.worklog(jira, age=age, recurse=True)
+				logs += bp.worklog
 
-		# Filter by date as requested
+		# Filter by date if requested
 		if age:
 			now = datetime.datetime.utcnow().replace(tzinfo=utc)
 			threshold = now - age
 			logs = [g for g in logs
 				if iso8601.parse_date(g.started) > threshold]
-
-		# Parse into progress and plans
-		for log in logs:
-			log.progress = []
-			log.plans = []
-			active = log.progress
-
-			for ln in log.comment.replace('\r', '').split('\n\n'):
-				ln = ln.replace('\n', ' ')
-				if re.match(self.re_progress, ln):
-					continue
-				if re.match(self.re_plans, ln):
-					active = log.plans
-					continue
-				active.append(ln)
 
 		# Return work log in time sorted order
 		return sorted(logs, key=lambda g: g.started)
@@ -243,14 +252,15 @@ class Report(object):
 		textwrap.TextWrapper(initial_indent='   - ', subsequent_indent='     ')
 	)
 
-	def __init__(self):
+	def __init__(self, jira):
+		self.jira = jira
 		self.issues = {}
 		self.cards = {}
 		self.blueprints = {}
 		self.members = {}
 
 	def add(self, raw):
-		issue = Issue(raw)
+		issue = Issue(raw, jira)
 		self.issues[issue.key] = issue
 
 		if issue.is_blueprint():
@@ -301,7 +311,7 @@ query = 'project = "Premium Services" AND (statusCategory != Complete OR updated
 all = jira.search_issues(query)
 
 # Grab each card and add them to the report
-report = Report()
+report = Report(jira)
 for id in all:
 	report.add(jira.issue(id))
 report.link_blueprints()
@@ -317,10 +327,10 @@ for member in sorted(report.members.iterkeys()):
 		report.print(card.fmt_summary(member), level=1)
 		for ln in card.fmt_engineering_status(max_age=8):
 			report.print(ln, level=2)
-		for log in card.worklog(jira, age=age, recurse=True):
+		for log in card.fmt_worklog(jira, age=age, recurse=True):
 			for bullet in log.progress:
 				report.print(bullet, level=2)
-		for comment in card.comments(jira, age=age, recurse=True):
+		for comment in card.fmt_comments(jira, age=age, recurse=True):
 			for bullet in comment.comment:
 				report.print(bullet, level=2)
 		for bp in sorted(card.blueprints, key=lambda x: x.key):
@@ -335,7 +345,7 @@ for member in sorted(report.members.iterkeys()):
 		report.print(card.fmt_summary(member), level=1)
 		for ln in card.fmt_engineering_plans():
 			report.print(ln, level=2)
-		for log in card.worklog(jira, age=age, recurse=True):
+		for log in card.fmt_worklog(jira, age=age, recurse=True):
 			for bullet in log.plans:
 				report.print(bullet, level=2)
 		for bp in sorted(card.blueprints, key=lambda x: x.key):
