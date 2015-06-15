@@ -78,8 +78,8 @@ def warn(issue, msg):
 
 class Issue(object):
 	re_ymd = re.compile('(20[0-9][0-9]).?([0-9][0-9]).?([0-9][0-9])')
-	re_progress = re.compile('^(h[123456]\.)?\s*[Pp]rogress')
-	re_plans = re.compile('^(h[123456]\.)?\s*[Pp]lans?')
+	re_progress = re.compile('^(h[123456]\.|#+)?\s*[Pp]rogress')
+	re_plans = re.compile('^(h[123456]\.|#+)?\s*[Pp]lans?')
 
 	def __init__(self, issue):
 		self._raw = issue
@@ -89,7 +89,10 @@ class Issue(object):
 			summary = summary.replace(old, new)
 		self.summary = summary.strip()
 
-		self.assignees = set((issue.fields.assignee.displayName,))
+		if issue.fields.assignee:
+			self.assignees = set((issue.fields.assignee.displayName,))
+		else:
+			self.assignees = set(("Noone",))
 		self.fields = issue.fields
 		self.engineering_status = issue.fields.customfield_10204
 		self.key = issue.key
@@ -130,7 +133,7 @@ class Issue(object):
 			return ()
 
 		es = es.replace('\r', '')
-		es = [ln.replace('plans: ', '') for ln in es.split('\n') if filt(ln)]
+		es = [ln.replace('plans: ', '').replace('Plans: ', '') for ln in es.split('\n') if filt(ln)]
 
 		return es
 
@@ -154,7 +157,7 @@ class Issue(object):
 					warn(self, 'contains bad date ({})'.format(
 						match.group(0)))
 		
-			if ln.startswith("plan"):
+			if ln.startswith("plan") or ln.startswith("Plan"):
 				return False
 
 			warn(self, 'has missing date in engineering status')
@@ -164,13 +167,39 @@ class Issue(object):
 
 	def fmt_engineering_plans(self):
 		def is_plan(ln):
-			return ln.startswith("plan")
+			return ln.startswith("plan") or ln.startswith("Plan")
 
 		return self._fmt_engineering_status(is_plan)
 
 	def fmt_summary(self, member):
 		return '{}: {} [{}] ({})'.format(member, self.summary, 
 				self.fmt_assignees(), self.key)
+
+	def comments(self, jira, age=None, recurse=False):
+		comments = []
+
+		for id in jira.comments(self.key):
+			comments.append(jira.comment(self.key, id))
+
+		if recurse and self.is_card():
+			for bp in self.blueprints:
+				comments += bp.comments(jira, age=age, recurse=True)
+
+		# Filter by date as requested
+		if age:
+			now = datetime.datetime.utcnow().replace(tzinfo=utc)
+			threshold = now - age
+			comments = [g for g in comments
+				if iso8601.parse_date(g.updated) > threshold]
+
+		# Try to format it:
+		for comment in comments:
+			comment.comment = []
+			for ln in comment.body.replace('\r', '').split('\n\n'):
+				comment.comment.append(ln.replace('\n', ' ').strip())
+
+		# Return comments in time sorted order
+		return sorted(comments, key=lambda g: g.updated)
 
 	def worklog(self, jira, age=None, recurse=False):
 		logs = []
@@ -182,7 +211,7 @@ class Issue(object):
 			for bp in self.blueprints:
 				logs += bp.worklog(jira, age=age, recurse=True)
 
-		# Filter by date is requested
+		# Filter by date as requested
 		if age:
 			now = datetime.datetime.utcnow().replace(tzinfo=utc)
 			threshold = now - age
@@ -205,7 +234,7 @@ class Issue(object):
 				active.append(ln)
 
 		# Return work log in time sorted order
-		return sorted(logs, key=lambda x: x.started)
+		return sorted(logs, key=lambda g: g.started)
 
 class Report(object):
 	wrappers = (
@@ -251,7 +280,7 @@ class Report(object):
 				continue
 	
 			card = report.cards[b.parent]
-			card.assignees.add(b.fields.assignee.displayName)
+			card.assignees |= b.assignees
 			card.blueprints.append(b)
 	
 	@staticmethod
@@ -290,6 +319,9 @@ for member in sorted(report.members.iterkeys()):
 			report.print(ln, level=2)
 		for log in card.worklog(jira, age=age, recurse=True):
 			for bullet in log.progress:
+				report.print(bullet, level=2)
+		for comment in card.comments(jira, age=age, recurse=True):
+			for bullet in comment.comment:
 				report.print(bullet, level=2)
 		for bp in sorted(card.blueprints, key=lambda x: x.key):
 			if 'Progress' in bp.categorize():
