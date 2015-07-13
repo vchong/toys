@@ -224,14 +224,16 @@ elif len(blurb):
 # Check for any style problems
 #
 
-(unused, output) = shell(
-	"scripts/checkpatch.pl %s | grep '.*has style problems.*'" %
-	(' '.join([x for x in patchfiles if x != '0000-cover-letter.patch']),))
-if output:
-	if 'IGNORE_CHECKPATCH' not in os.environ:
-		errors += output
-	else:
-		warnings += output
+if 'SKIP_CHECKPATCH' not in os.environ:
+	(unused, output) = shell(
+		"scripts/checkpatch.pl %s | grep '.*has style problems.*'" %
+		(' '.join([x for x in patchfiles if
+			x != '0000-cover-letter.patch']),))
+	if output:
+		if 'IGNORE_CHECKPATCH' not in os.environ:
+			errors += output
+		else:
+			warnings += output
 
 print("\nRelease tags:\n" + '\n'.join(xrefs))
 
