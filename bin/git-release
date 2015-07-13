@@ -70,7 +70,13 @@ def parse_cover(ln, c):
 		return len(c) == 0
 	if ln.startswith('git ') and len(c) == 0:
 		return False
-	
+	if ln.lstrip().startswith('#'):
+		# Try to spot comments and strip them out
+		firstword = ln.lstrip('# \t').partition(' ')[0]
+		if firstword not in ('define', 'undef', 'ifdef', 'ifndef',
+				     'if', 'else', 'endif'):
+			return True
+
 	c.append(ln)
 	return True
 
