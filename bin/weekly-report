@@ -26,6 +26,7 @@
 from __future__ import print_function
 
 import datetime
+from itertools import chain
 from jira.client import JIRA
 import iso8601
 import keyring
@@ -61,6 +62,7 @@ utc = UTC()
 hacks = (
 	('CARD:', ''),
 	('BLUEPRINT:', ''),
+	('ENG:', ''),
 	('backport feature', 'backport'),
 	('found in 3.18 LSK to the', 'to'),
 	('Prepare presentation', 'Presentation'),
@@ -68,8 +70,12 @@ hacks = (
 	('for u-boot/linux for', 'for'),
 	('Execute initial test plan ltp-ddt test cases to LAVA for BBB',
 		'LTP-DDT: Initial LAVA integration (using BBB)'),
-	('ZTE power management', 'Power management')
+	('ZTE power management', 'Power management'),
 )
+
+component_aliases = {
+	'Android-upstreaming' : 'Linaro'
+}
 
 def warn(issue, msg):
 	lines = textwrap.wrap('{} {}'.format(issue.url, msg),
@@ -98,7 +104,11 @@ class Issue(object):
 		self.engineering_status = issue.fields.customfield_10204
 		self.key = issue.key
 		if self.is_blueprint():
+			# Canonical form for customfield_10301: u'PS-63'
 			self.parent = issue.fields.customfield_10301
+		elif self.is_subtask():
+			# Canonical form for parent: <JIRA Issue: key=u'KWG-56', id=u'13944'>
+			self.parent = issue.fields.parent.key
 		self.url = 'https://cards.linaro.org/browse/' + issue.key
 
 		self._get_comments(jira)
@@ -110,12 +120,20 @@ class Issue(object):
 		for id in jira.comments(self.key):
 			self.comments.append(jira.comment(self.key, id))
 
-		# Interpret paragraphs
+		# Parse into progress and plans
 		for comment in self.comments:
-			comment.comment = []
+			comment.progress = []
+			comment.plans = []
+			active = comment.progress
+
 			for ln in comment.body.replace('\r', '').split('\n\n'):
-				comment.comment.append(
-						ln.replace('\n', ' ').strip())
+				ln = ln.replace('\n', ' ').strip()
+				if re.match(self.re_progress, ln):
+					continue
+				if re.match(self.re_plans, ln):
+					active = comment.plans
+					continue
+				active.append(ln)
 
 	def _get_worklog(self, jira):
 		self.worklog = []
@@ -140,6 +158,12 @@ class Issue(object):
 
 	def is_blueprint(self):
 		return self.fields.issuetype.name == 'Blueprint'
+
+	def is_subtask(self):
+		'''A sub-task is similar to a blueprint but has a proper
+		parent-child relationship with the engineering card.
+		'''
+		return self.fields.issuetype.name == 'Sub-task'
 
 	def is_card(self):
 		return self.fields.issuetype.name == 'Engineering card'
@@ -263,7 +287,7 @@ class Report(object):
 		issue = Issue(raw, jira)
 		self.issues[issue.key] = issue
 
-		if issue.is_blueprint():
+		if issue.is_blueprint() or issue.is_subtask():
 			self.blueprints[issue.key] = issue
 		elif issue.is_card():
 			self.cards[issue.key] = issue
@@ -271,18 +295,21 @@ class Report(object):
 			if len(issue.fields.components) == 0:
 				warn(issue, 'has no component')
 			for m in issue.fields.components:
-				if m.name not in self.members:
-					self.members[m.name] = []
-				self.members[m.name].append(issue)
+				name = m.name
+				if name in component_aliases:
+					name = component_aliases[name]
+				if name not in self.members:
+					self.members[name] = []
+				self.members[name].append(issue)
 			issue.blueprints = []
 		else:
-			warn(self, 'has unexpected issuetype {}'.format(
-				self.fields.issuetype.name))
+			warn(issue, 'has unexpected issuetype {}'.format(
+				issue.fields.issuetype.name))
 	
 	def link_blueprints(self):
 		'''Iterate over the blueprints and link them to their cards.'''
 		for b in self.blueprints.itervalues():
-			if b.parent == None:
+			if not b.parent:
 				warn(b, 'is not linked to an EPIC')
 				continue
 			elif b.parent not in report.cards:
@@ -306,13 +333,29 @@ username = 'daniel.thompson@linaro.org'
 password = keyring.get_password(server, username)
 jira = JIRA(options={'server': server}, basic_auth=(username, password))
 
+# Generate any additional query contraints
+if len(sys.argv) > 1:
+	constraint = 'AND ({})'.format(' '.join(sys.argv[1:]))
+
+	# Ensure the @ symbol is always escaped (it is a reserved JQL character
+	# to cannot appear in raw form outside of a string and JQL strings are
+	# complex to pass from the command line)
+	constraint = constraint.replace('@', '\\u0040')
+else:
+	constraint = ''
+
 # Collect the data we must summarize
-query = 'project = "Premium Services" AND (statusCategory != Complete OR updatedDate >= -7d)'
-all = jira.search_issues(query)
+lps = jira.search_issues('project = "Premium Services" AND (statusCategory != Complete OR updatedDate >= -8d)' + constraint)
+
+# Only collect KWG data for special cases
+kwg = jira.search_issues('project = "KWG" AND (statusCategory != Complete OR updatedDate >= -8d) AND assignee = "daniel.thompson@linaro.org"')
+if constraint:
+	if "daniel.thompson@linaro.org" not in constraint:
+		kwg = ()
 
 # Grab each card and add them to the report
 report = Report(jira)
-for id in all:
+for id in chain(lps, kwg):
 	report.add(jira.issue(id))
 report.link_blueprints()
 
@@ -331,13 +374,15 @@ for member in sorted(report.members.iterkeys()):
 			for bullet in log.progress:
 				report.print(bullet, level=2)
 		for comment in card.fmt_comments(jira, age=age, recurse=True):
-			for bullet in comment.comment:
+			for bullet in comment.progress:
 				report.print(bullet, level=2)
-		for bp in sorted(card.blueprints, key=lambda x: x.key):
-			if 'Progress' in bp.categorize():
-				report.print(bp.summary, level=2)
+		# Disabled (clutters things up too much)
+		#for bp in sorted(card.blueprints, key=lambda x: x.key):
+		#	if 'Progress' in bp.categorize():
+		#		report.print(bp.summary, level=2)
 
-report.print('\n## Plans')
+report.print('')
+report.print('## Plans')
 
 for member in sorted(report.members.iterkeys()):
 	for card in sorted(report.members[member], key=lambda x: x.key):
@@ -348,6 +393,10 @@ for member in sorted(report.members.iterkeys()):
 		for log in card.fmt_worklog(jira, age=age, recurse=True):
 			for bullet in log.plans:
 				report.print(bullet, level=2)
-		for bp in sorted(card.blueprints, key=lambda x: x.key):
-			if 'Plan' in bp.categorize():
-				report.print(bp.summary, level=2)
+		for comment in card.fmt_comments(jira, age=age, recurse=True):
+			for bullet in comment.plans:
+				report.print(bullet, level=2)
+		# Disabled (clutters things up too much)
+		#for bp in sorted(card.blueprints, key=lambda x: x.key):
+		#	if 'Plan' in bp.categorize():
+		#		report.print(bp.summary, level=2)
