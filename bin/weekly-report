@@ -336,16 +336,16 @@ jira = JIRA(options={'server': server}, basic_auth=(username, password))
 # Generate any additional query contraints
 if len(sys.argv) > 1:
 	constraint = 'AND ({})'.format(' '.join(sys.argv[1:]))
-
-	# Ensure the @ symbol is always escaped (it is a reserved JQL character
-	# to cannot appear in raw form outside of a string and JQL strings are
-	# complex to pass from the command line)
-	constraint = constraint.replace('@', '\\u0040')
 else:
 	constraint = ''
 
-# Collect the data we must summarize
-lps = jira.search_issues('project = "Premium Services" AND (statusCategory != Complete OR updatedDate >= -8d)' + constraint)
+# Collect the data we must summarize.
+#
+# Note that special handling on the constraint to ensure that the @ symbol
+# is always escaped. @ is a reserved JQL character so cannot appear in raw
+# form outside of a string and JQL strings are complex to pass from the
+# command line)
+lps = jira.search_issues('project = "Premium Services" AND (statusCategory != Complete OR updatedDate >= -8d)' + constraint.replace('@', '\\u0040'))
 
 # Only collect KWG data for special cases
 kwg = jira.search_issues('project = "KWG" AND (statusCategory != Complete OR updatedDate >= -8d) AND assignee = "daniel.thompson@linaro.org"')
