@@ -9,3 +9,11 @@ too useful to risk mislaying.
    to be shared with containers)
  * tests/ contains a couple of ad-hoc test suites
 
+Quickstart
+----------
+
+~~~~
+git clone https://git.linaro.org/people/daniel.thompson/toys.git
+git submodule update --init --recursive
+~~~
+
