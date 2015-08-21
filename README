@@ -1,13 +1,11 @@
-This is a random-ish collection of tools and toys. Generally speaking they
-are too small to live a life of their own but too useful to lose.
+This is a random-ish collection of tools and toys.
 
-  bin/ contains convenience commands, mostly related to kernel development
-  tests/ contains a couple of ad-hoc test suites
+Generally speaking they are too small to live in their own repo but are
+too useful to risk mislaying.
 
-This repo includes pexpect as a git subtree. Please avoid local modifications
-but, if you need to update to the latest version of pexpect for any reason,
-try:
-
-  git remote add -f pexpect https://github.com/pexpect/pexpect.git
-  git subtree pull --prefix pexpect/ pexpect master --squash
+ * bin/ contains convenience commands, mostly related to kernel development
+ * jenkins/ contains some utilities to help run backups using jenkins
+ * loop/ is a utility to forcibly allocate loop device nodes (allowing them
+   to be shared with containers)
+ * tests/ contains a couple of ad-hoc test suites
 
