@@ -77,6 +77,12 @@ component_aliases = {
 	'Android-upstreaming' : 'Linaro'
 }
 
+# When a card has more than one component we will remove these labels
+# *in order* until there is only one component to use as a sub-title.
+component_purge = (
+	'Engineering works', 'Linaro', 'Member Build', 'LAVA', 'Training', '96Boards'
+)
+
 def warn(issue, msg):
 	lines = textwrap.wrap('{} {}'.format(issue.url, msg),
 			initial_indent=   'WARNING: ',
@@ -292,12 +298,24 @@ class Report(object):
 		elif issue.is_card():
 			self.cards[issue.key] = issue
 
-			if len(issue.fields.components) == 0:
-				warn(issue, 'has no component')
-			for m in issue.fields.components:
-				name = m.name
+			components = []
+			for c in issue.fields.components:
+				name = c.name
 				if name in component_aliases:
 					name = component_aliases[name]
+				components.append(name)
+			for p in component_purge:
+				if len(components) < 2:
+					break
+				if p in components:
+					components.remove(p)
+
+			if len(components) == 0:
+				warn(issue, 'has no component')
+			elif len(components) >= 2:
+				warn(issue, 'has too many components '+
+						'(incomplete purge list?)')
+			for name in components:
 				if name not in self.members:
 					self.members[name] = []
 				self.members[name].append(issue)
