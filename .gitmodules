@@ -1,3 +1,6 @@
 [submodule "pexpect"]
 	path = pexpect
 	url = https://github.com/pexpect/pexpect.git
+[submodule "ptyprocess"]
+	path = ptyprocess
+	url = https://github.com/pexpect/ptyprocess.git
