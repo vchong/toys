@@ -10,6 +10,7 @@ from __future__ import print_function
 
 import os
 import pexpect
+import pexpect.fdpexpect
 import time
 import traceback
 import sys
@@ -72,7 +73,14 @@ def telnet(host, port=23, logfile=sys.stdout):
 		s.expect('Escape character is')
 		return s
 	except:
-		bad("Cannot aaccess %s:%s" % (host, port))
+		bad("Cannot access %s:%s" % (host, port))
+
+def netcat(host, port, logfile=sys.stdout):
+	"""Connect to a raw socket with automatic failure reporting."""
+	try:
+		return pexpect.spawn('nc %s %d' % (host, port), logfile=logfile)
+	except:
+		bad("Cannot access %s:%s" % (host, port))
 
 def qemu(cmd, logfile=None):
 	"""Launch qemu and wait for sockets to open, with automatic
