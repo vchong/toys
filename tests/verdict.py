@@ -65,6 +65,13 @@ def build(cmds=()):
 	except:
 		skip("Cannot compile")
 
+def serial(port, baud=115200, logfile=sys.stdout):
+	"""Connect to serial port with automatic failure reporting."""
+	try:
+		return pexpect.spawn('socat - %s,raw,echo=0,ispeed=%d,ospeed=%d' % (port, baud, baud), logfile=logfile)
+	except:
+		bad("Cannot open %s" % (port,))
+
 def telnet(host, port=23, logfile=sys.stdout):
 	"""Connect to telnet socket with automatic failure reporting."""
 	try:
