@@ -190,5 +190,5 @@ def expect_nmi_debugger(s):
 
 def expect_login_prompt(s):
 	"""Wait for the login prompt"""
-	s.expect('debian-[^ ]* login:')
+	s.expect(['debian-[^ ]* login:', 'buildroot login:'])
 
