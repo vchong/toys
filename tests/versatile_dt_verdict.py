@@ -19,7 +19,7 @@ def run():
 	verdict.expect_slow_replies(uart)
 	verdict.expect_systemd_boot(uart, 'Uncompressing Linux...')
 
-	verdict.good((uart, qemu))
+	verdict.good(cleanup=(uart, qemu))
 
 if __name__ == "__main__":
 	run()

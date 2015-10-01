@@ -30,7 +30,7 @@ def run(args=[]):
 	#	verdict.expect_nmi_debugger(uart)
 	#	verdict.expect_nmi_debugger(uart)
 
-	verdict.good((uart, qemu))
+	verdict.good(cleanup=(uart, qemu))
 
 if __name__ == '__main__':
 	run(sys.argv[1:])

@@ -85,7 +85,7 @@ def run():
 		verdict.bad('logcat did not output all expected patterns')
 
 	print('### Matched %d messages' % (sum(counts),))
-	verdict.good((uart, qemu))
+	verdict.good(cleanup=(uart, qemu))
 
 if __name__ == '__main__':
 	run()

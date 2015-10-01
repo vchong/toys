@@ -33,7 +33,7 @@ def run():
 	uart.send('go\r')
 	uart.expect('debian-[^ ]* login:')
 
-	verdict.good((uart, qemu))
+	verdict.good(cleanup=(uart, qemu))
 
 if __name__ == '__main__':
 	run()

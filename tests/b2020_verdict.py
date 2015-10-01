@@ -43,7 +43,7 @@ def run(args=[]):
 		verdict.expect_nmi_debugger(uart)
 		verdict.expect_nmi_debugger(uart)
 
-	verdict.good((uart, gdb))
+	verdict.good(cleanup=(uart, gdb))
 
 if __name__ == '__main__':
 	run(sys.argv[1:])

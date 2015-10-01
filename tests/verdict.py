@@ -37,7 +37,7 @@ def bad(msg):
 	print('### BAD: %s ###' % (msg,))
 	sys.exit(1)
 
-def good(msg, cleanup=()):
+def good(cleanup=()):
 	"""Report success and exit."""
 	for f in cleanup:
 		f.close()
