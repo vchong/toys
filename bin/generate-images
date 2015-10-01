@@ -1,0 +1,105 @@
+#!/usr/bin/env hbcxx
+// For hbcxx see: https://github.com/daniel-thompson/hbcxx
+
+/*
+ * generate-images
+ *
+ * Generate some simple test images. Mostly this is single colour
+ * raw images that can be used to check stride, etc.
+ */
+
+#include <cstdint>
+#include <cstdio>
+#include <string>
+
+using namespace std;
+
+/*
+ * Generate a raw block of colour.
+ */
+void generate_block(const string &fname, unsigned sx, unsigned sy, unsigned bpp,
+		    unsigned char *pixel)
+{
+	FILE *f = fopen(fname.c_str(), "wb");
+	if (!f)
+		throw string{"Cannot open file: "} + fname;
+	printf("Generating %s ... ", fname.c_str());
+
+	for (unsigned y=0; y<sy; y++)
+		for (unsigned x=0; x<sx; x++)
+			fwrite(pixel, bpp/8, 1, f);
+
+	fclose(f);
+	printf("ok\n");
+}
+
+/*
+ * Generate a large white border rectangle.
+ */
+void generate_border(const string &fname, unsigned sx, unsigned sy,
+		     unsigned bpp)
+{
+	unsigned char white[] = { 255, 255, 255, 255 };
+	unsigned char black[] = { 0, 0, 0, 0 };
+
+	FILE *f = fopen(fname.c_str(), "wb");
+	if (!f)
+		throw string{"Cannot open file: "} + fname;
+	printf("Generating %s ... ", fname.c_str());
+
+	for (unsigned y=0; y<sy; y++)
+		for (unsigned x=0; x<sx; x++)
+			if ((y >= 16 && y <= 20) ||
+			    (y >= (sy-20) && y <= (sy-16)) ||
+			    (x >= 16 && x <= 20) ||
+			    (x >= (sx-20) && x <= (sx-16)))
+				fwrite(white, bpp / 8, 1, f);
+			else
+				fwrite(black, bpp / 8, 1, f);
+
+	fclose(f);
+	printf("ok\n");
+}
+
+int main()
+{
+	unsigned char red565[] = { 0x00, 0x1f };
+	unsigned char green565[] = { 0x07, 0xd0 };
+	unsigned char blue565[] = { 0xf8, 0x00 };
+	unsigned char white565[] = { 0xff, 0xff };
+	
+	unsigned char red888[] = { 0, 0, 255 };
+	unsigned char green888[] = { 0, 255, 0 };
+	unsigned char blue888[] = { 255, 0, 0 };
+	unsigned char white888[] = { 255, 255, 255 };
+
+	unsigned char red8888[] = { 255, 0, 0, 255 };
+	unsigned char green8888[] = { 255, 0, 255, 0 };
+	unsigned char blue8888[] = { 255, 255, 0, 0 };
+	unsigned char white8888[] = { 255, 255, 255, 255 };
+
+	generate_block("red-1280x720-16.raw", 1280, 720, 16, red565);
+	generate_block("green-1280x720-16.raw", 1280, 720, 16, green565);
+	generate_block("blue-1280x720-16.raw", 1280, 720, 16, blue565);
+	generate_block("white-1280x720-16.raw", 1280, 720, 16, white565);
+
+	generate_block("red-1280x720-24.raw", 1280, 720, 24, red888);
+	generate_block("green-1280x720-24.raw", 1280, 720, 24, green888);
+	generate_block("blue-1280x720-24.raw", 1280, 720, 24, blue888);
+	generate_block("white-1280x720-24.raw", 1280, 720, 24, white888);
+
+	generate_block("red-1280x720-32.raw", 1280, 720, 32, red8888);
+	generate_block("green-1280x720-32.raw", 1280, 720, 32, green8888);
+	generate_block("blue-1280x720-32.raw", 1280, 720, 32, blue8888);
+	generate_block("white-1280x720-32.raw", 1280, 720, 32, white8888);
+
+	generate_border("border-1280x720-16.raw", 1280, 720, 16);
+	generate_border("border-1280x720-24.raw", 1280, 720, 24);
+	generate_border("border-1280x720-32.raw", 1280, 720, 32);
+
+	generate_border("border-1920x1080-16.raw", 1920, 1080, 16);
+	generate_border("border-1920x1080-24.raw", 1920, 1080, 24);
+	generate_border("border-1920x1080-32.raw", 1920, 1080, 32);
+
+	return 0;
+}
