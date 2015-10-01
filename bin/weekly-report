@@ -405,10 +405,6 @@ for member in sorted(report.members.iterkeys()):
 		for comment in card.fmt_comments(jira, age=age, recurse=True):
 			for bullet in comment.progress:
 				report.print(bullet, level=2)
-		# Disabled (clutters things up too much)
-		#for bp in sorted(card.blueprints, key=lambda x: x.key):
-		#	if 'Progress' in bp.categorize():
-		#		report.print(bp.summary, level=2)
 
 report.print('')
 report.print('## Plans')
@@ -425,7 +421,3 @@ for member in sorted(report.members.iterkeys()):
 		for comment in card.fmt_comments(jira, age=age, recurse=True):
 			for bullet in comment.plans:
 				report.print(bullet, level=2)
-		# Disabled (clutters things up too much)
-		#for bp in sorted(card.blueprints, key=lambda x: x.key):
-		#	if 'Plan' in bp.categorize():
-		#		report.print(bp.summary, level=2)
