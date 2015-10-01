@@ -107,11 +107,11 @@ class Issue(object):
 		else:
 			self.assignees = set(("Noone",))
 		self.fields = issue.fields
-		self.engineering_status = issue.fields.customfield_10204
+		self.engineering_status = issue.fields.customfield_10022
 		self.key = issue.key
-		if self.is_blueprint():
-			# Canonical form for customfield_10301: u'PS-63'
-			self.parent = issue.fields.customfield_10301
+		if self.is_story():
+			# Canonical form for customfield_10005: u'PS-63'
+			self.parent = issue.fields.customfield_10005
 		elif self.is_subtask():
 			# Canonical form for parent: <JIRA Issue: key=u'KWG-56', id=u'13944'>
 			self.parent = issue.fields.parent.key
@@ -162,8 +162,8 @@ class Issue(object):
 					continue
 				active.append(ln)
 
-	def is_blueprint(self):
-		return self.fields.issuetype.name == 'Blueprint'
+	def is_story(self):
+		return self.fields.issuetype.name == 'Story'
 
 	def is_subtask(self):
 		'''A sub-task is similar to a blueprint but has a proper
@@ -171,8 +171,9 @@ class Issue(object):
 		'''
 		return self.fields.issuetype.name == 'Sub-task'
 
-	def is_card(self):
-		return self.fields.issuetype.name == 'Engineering card'
+	def is_epic(self):
+		return self.fields.issuetype.name == 'Epic'
+
 
 	def categorize(self):
 		lookup = {
@@ -245,7 +246,7 @@ class Issue(object):
 
 	def fmt_comments(self, jira, age=None, recurse=False):
 		comments = list(self.comments)
-		if recurse and self.is_card():
+		if recurse and self.is_epic():
 			for bp in self.blueprints:
 				comments += bp.comments
 
@@ -261,7 +262,7 @@ class Issue(object):
 
 	def fmt_worklog(self, jira, age=None, recurse=False):
 		logs = list(self.worklog)
-		if recurse and self.is_card():
+		if recurse and self.is_epic():
 			for bp in self.blueprints:
 				logs += bp.worklog
 
@@ -293,9 +294,9 @@ class Report(object):
 		issue = Issue(raw, jira)
 		self.issues[issue.key] = issue
 
-		if issue.is_blueprint() or issue.is_subtask():
+		if issue.is_story() or issue.is_subtask():
 			self.blueprints[issue.key] = issue
-		elif issue.is_card():
+		elif issue.is_epic():
 			self.cards[issue.key] = issue
 
 			components = []
@@ -344,7 +345,7 @@ class Report(object):
 
 
 # Connect to the server
-server = 'https://cards.linaro.org'
+server = 'https://projects.linaro.org'
 username = 'daniel.thompson@linaro.org'
 # To store the password, run this from an interactive python session
 # import keyring; keyring.set_password(server, username, "mysecret")
@@ -363,17 +364,20 @@ else:
 # is always escaped. @ is a reserved JQL character so cannot appear in raw
 # form outside of a string and JQL strings are complex to pass from the
 # command line)
-lps = jira.search_issues('project = "Premium Services" AND (statusCategory != Complete OR updatedDate >= -8d)' + constraint.replace('@', '\\u0040'))
+pse = jira.search_issues('project = "Premium Services Engineering" AND (statusCategory != Complete OR updatedDate >= -8d)' + constraint.replace('@', '\\u0040'))
 
 # Only collect KWG data for special cases
-kwg = jira.search_issues('project = "KWG" AND (statusCategory != Complete OR updatedDate >= -8d) AND assignee = "daniel.thompson@linaro.org"')
-if constraint:
-	if "daniel.thompson@linaro.org" not in constraint:
-		kwg = ()
+if False:
+	lmg = jira.search_issues('project = "Linaro Mobile Group" AND (statusCategory != Complete OR updatedDate >= -8d) AND assignee = "daniel.thompson@linaro.org"')
+	if constraint:
+		if "daniel.thompson@linaro.org" not in constraint:
+			lmg = ()
+else:
+	lmg = ()
 
 # Grab each card and add them to the report
 report = Report(jira)
-for id in chain(lps, kwg):
+for id in chain(pse, lmg):
 	report.add(jira.issue(id))
 report.link_blueprints()
 
