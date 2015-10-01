@@ -139,6 +139,13 @@ def stlinux_arm_boot(cmd, logfile=None):
 		except:
 			bad("Cannot boot")
 
+def cmd(s, cmd):
+	s.sendline(cmd)
+	s.expect('root.*# ')
+	s.sendline('echo $?')
+	s.expect('0')
+	s.expect('root.*# ')
+
 def expect_slow_replies(s):
 	s.timeout *= 4
 
