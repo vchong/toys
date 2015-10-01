@@ -9,18 +9,13 @@
 #
 # TODO: 
 #
-#  - Add command line processing (configurable time windows,
-#    include URL in draft versions of reports to make it quicker
-#    to update engineering status fields, restrict to single
-#    engineer).
-#
-#  - Improve processing of idiomatic text from engineering status
-#    field (more flexibility on numbers, stripping out of dates to
-#    I don't have to manually reflow text).
+#  - Add further command line processing (e.g. configurable time
+#    windows, tree view, etc)
 #
 #  - Bring the final loops into the report class.
 #
-#  - Include KWG cards assigned to me in the report.
+#  - Improve focus. Do we really need formatters for comments, work
+#    logs *and* engineering status.
 #
 
 from __future__ import print_function
@@ -236,7 +231,7 @@ class Issue(object):
 			if ln.startswith("plan") or ln.startswith("Plan"):
 				return False
 
-			warn(self, 'has missing date in engineering status')
+			warn(self, 'has missing date in engineering status: "%s"' % ln)
 			return True
 
 		return self._fmt_engineering_status(is_current)
