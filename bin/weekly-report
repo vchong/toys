@@ -77,6 +77,10 @@ component_aliases = {
 	'Android-upstreaming' : 'Linaro'
 }
 
+displayname_aliases = {
+	'Esla.Anzaku@linaro.org' : 'Elsa'
+}
+
 # When a card has more than one component we will remove these labels
 # *in order* until there is only one component to use as a sub-title.
 component_purge = (
@@ -103,7 +107,10 @@ class Issue(object):
 		self.summary = summary.strip()
 
 		if issue.fields.assignee:
-			self.assignees = set((issue.fields.assignee.displayName,))
+			displayname = issue.fields.assignee.displayName
+			if displayname in displayname_aliases:
+				displayname = displayname_aliases[displayname]
+			self.assignees = set((displayname,))
 		else:
 			self.assignees = set(("Noone",))
 		self.fields = issue.fields
