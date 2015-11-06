@@ -79,14 +79,18 @@ displayname_aliases = {
 # When a card has more than one component we will remove these labels
 # *in order* until there is only one component to use as a sub-title.
 component_purge = (
-	'Engineering works', 'Linaro', 'Member Build', 'LAVA', 'Training', '96Boards'
+	'Engineering works', 'Linaro', 'BSP Analysis', 'Upstream Consultancy', 'Member Build', 'LAVA', 'Training', '96Boards'
+)
+
+component_categories = (
+	'BSP Analysis', 'Engineering works', 'Member Build', 'LAVA', 'Training', '96Boards', 'Upstream Consultancy', 'Linaro'
 )
 
 def warn(issue, msg):
 	lines = textwrap.wrap('{} {}'.format(issue.url, msg),
 			initial_indent=   'WARNING: ',
 			subsequent_indent='         ')
-	print('\n'.join(lines))
+	print('\n'.join(lines), file=sys.stderr)
 
 class Issue(object):
 	re_ymd = re.compile('(20[0-9][0-9]).?([0-9][0-9]).?([0-9][0-9])')
@@ -117,7 +121,7 @@ class Issue(object):
 		elif self.is_subtask():
 			# Canonical form for parent: <JIRA Issue: key=u'KWG-56', id=u'13944'>
 			self.parent = issue.fields.parent.key
-		self.url = 'https://cards.linaro.org/browse/' + issue.key
+		self.url = 'https://projects.linaro.org/browse/' + issue.key
 
 		self._get_comments(jira)
 		self._get_worklog(jira)
@@ -191,6 +195,42 @@ class Issue(object):
 
 		warn(self, 'has bad status ({})'.format(self.fields.status.name))
 		return set()
+
+	def get_component(self):
+		components = []
+		for c in self._raw.fields.components:
+			name = c.name
+			if name in component_aliases:
+				name = component_aliases[name]
+			components.append(name)
+		for p in component_categories:
+			if p in components:
+				return p
+
+		warn(self, 'does not match the component categories')
+		return ''
+
+	def get_member(self):
+		components = []
+		for c in self._raw.fields.components:
+			name = c.name
+			if name in component_aliases:
+				name = component_aliases[name]
+			components.append(name)
+		for p in component_categories:
+			if len(components) < 2:
+				break
+			if p in components:
+				components.remove(p)
+
+		if len(components) == 0:
+			warn(self, 'has no member')
+		elif len(components) >= 2:
+			warn(self, 'has too many members '+
+					'(incomplete category list?)')
+		else:
+			return components[0]
+		return ''
 
 	def fmt_assignees(self):
 		msg = ""
