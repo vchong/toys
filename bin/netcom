@@ -34,8 +34,9 @@ do
 	usleep 1000
 done
 
-# connect to the pty, disable locking so we don't need to run as root
-picocom --nolock "$link"
+# connect to the pty, disabling locking so we don't need to run as root
+# and enabling Zmodem file transfers.
+picocom --nolock --send-cmd sz --receive-cmd rz --nolock "$link"
 
 # clean up the soft-link and wait for socat to exit
 rm -f "$link"
