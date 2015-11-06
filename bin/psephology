@@ -1,0 +1,552 @@
+#!/usr/bin/env python
+
+#
+# psephology
+#
+# Extract JIRA status to generate template report
+#
+
+from __future__ import print_function
+
+import argparse
+import datetime
+from itertools import chain
+from jira.client import JIRA
+import iso8601
+import keyring
+import re
+import textwrap
+import subprocess
+import sys
+
+server = 'https://projects.linaro.org'
+username = 'daniel.thompson@linaro.org'
+
+class Error(Exception):
+	'''Application Specific Error type. It is only sub-classed to
+	make it easier to spot; it adds not functionality versus the
+	parent.
+
+	'''
+	pass
+
+class UTC(datetime.tzinfo):
+    ZERO = datetime.timedelta(0)
+
+    def utcoffset(self, dt):
+	return self.ZERO
+
+    def tzname(self, dt):
+        return "UTC"
+
+    def dst(self, dt):
+        return self.ZERO
+
+utc = UTC()
+
+#
+# Collection of find/replace strings to massage a summary for
+#  readability.
+#
+# Ideally all we would do with hacks is strip our redundant idioms
+# such as including the issuetype in the summary.
+#
+# However for now we go a bit deeper and try to remove other
+# redundant information from the summary (such as member name) or
+# excessive use of verbs.
+#
+hacks = (
+	('CARD:', ''),
+	('BLUEPRINT:', ''),
+	('ENG:', ''),
+	('backport feature', 'backport'),
+	('found in 3.18 LSK to the', 'to'),
+	('Prepare presentation', 'Presentation'),
+	('and its relationship to', 'and'),
+	('for u-boot/linux for', 'for'),
+	('Execute initial test plan ltp-ddt test cases to LAVA for BBB',
+		'LTP-DDT: Initial LAVA integration (using BBB)'),
+	('ZTE power management', 'Power management'),
+)
+
+component_aliases = {
+	'Android-upstreaming' : 'Linaro'
+}
+
+displayname_aliases = {
+	'Esla.Anzaku@linaro.org' : 'Elsa'
+}
+
+# When a card has more than one component we will remove these labels
+# *in order* until there is only one component to use as a sub-title.
+component_purge = (
+	'Engineering works', 'Linaro', 'BSP Analysis', 'Upstream Consultancy', 'Member Build', 'LAVA', 'Training', '96Boards'
+)
+
+component_categories = (
+	'BSP Analysis', 'Engineering works', 'Member Build', 'LAVA', 'Training', '96Boards', 'Upstream Consultancy', 'Linaro'
+)
+
+def warn(issue, msg):
+	lines = textwrap.wrap('{} {}'.format(issue.url, msg),
+			initial_indent=   'WARNING: ',
+			subsequent_indent='         ')
+	print('\n'.join(lines), file=sys.stderr)
+
+class Issue(object):
+	re_ymd = re.compile('(20[0-9][0-9]).?([0-9][0-9]).?([0-9][0-9])')
+	re_progress = re.compile('^(h[123456]\.|#+)?\s*[Pp]rogress')
+	re_plans = re.compile('^(h[123456]\.|#+)?\s*[Pp]lans?')
+
+	def __init__(self, issue, jira):
+		self._raw = issue
+
+		summary = issue.fields.summary
+		for (old, new) in hacks:
+			summary = summary.replace(old, new)
+		self.summary = summary.strip()
+
+		if issue.fields.assignee:
+			displayname = issue.fields.assignee.displayName
+			if displayname in displayname_aliases:
+				displayname = displayname_aliases[displayname]
+			self.assignees = set((displayname,))
+		else:
+			self.assignees = set(("Noone",))
+		self.fields = issue.fields
+		self.engineering_status = issue.fields.customfield_10022
+		self.key = issue.key
+		if self.is_story():
+			# Canonical form for customfield_10005: u'PS-63'
+			self.parent = issue.fields.customfield_10005
+		elif self.is_subtask():
+			# Canonical form for parent: <JIRA Issue: key=u'KWG-56', id=u'13944'>
+			self.parent = issue.fields.parent.key
+		self.url = 'https://projects.linaro.org/browse/' + issue.key
+
+		self._get_comments(jira)
+		self._get_worklog(jira)
+	
+	def _get_comments(self, jira):
+		self.comments = []
+
+		for id in jira.comments(self.key):
+			self.comments.append(jira.comment(self.key, id))
+
+		# Parse into progress and plans
+		for comment in self.comments:
+			comment.progress = []
+			comment.plans = []
+			active = comment.progress
+
+			for ln in comment.body.replace('\r', '').split('\n\n'):
+				ln = ln.replace('\n', ' ').strip()
+				if re.match(self.re_progress, ln):
+					continue
+				if re.match(self.re_plans, ln):
+					active = comment.plans
+					continue
+				active.append(ln)
+
+	def _get_worklog(self, jira):
+		self.worklog = []
+
+		for id in jira.worklogs(self.key):
+			self.worklog.append(jira.worklog(self.key, id))
+
+		# Parse into progress and plans
+		for log in self.worklog:
+			log.progress = []
+			log.plans = []
+			active = log.progress
+
+			for ln in log.comment.replace('\r', '').split('\n\n'):
+				ln = ln.replace('\n', ' ').strip()
+				if re.match(self.re_progress, ln):
+					continue
+				if re.match(self.re_plans, ln):
+					active = log.plans
+					continue
+				active.append(ln)
+
+	def is_story(self):
+		return self.fields.issuetype.name == 'Story'
+
+	def is_subtask(self):
+		'''A sub-task is similar to a blueprint but has a proper
+		parent-child relationship with the engineering card.
+		'''
+		return self.fields.issuetype.name == 'Sub-task'
+
+	def is_epic(self):
+		return self.fields.issuetype.name == 'Epic'
+
+
+	def categorize(self):
+		lookup = {
+			'Open': (),
+			'TODO': ('Plan',),
+			'In Progress' : ('Plan', 'Progress'),
+			'Resolved' : ('Progress',),
+			'Closed' : ('Progress',),
+		}
+
+		if self.fields.status.name in lookup:
+			return set(lookup[self.fields.status.name])
+
+		warn(self, 'has bad status ({})'.format(self.fields.status.name))
+		return set()
+
+	def get_component(self):
+		components = []
+		for c in self._raw.fields.components:
+			name = c.name
+			if name in component_aliases:
+				name = component_aliases[name]
+			components.append(name)
+		for p in component_categories:
+			if p in components:
+				return p
+
+		warn(self, 'does not match the component categories')
+		return ''
+
+	def get_member(self):
+		components = []
+		for c in self._raw.fields.components:
+			name = c.name
+			if name in component_aliases:
+				name = component_aliases[name]
+			components.append(name)
+		for p in component_categories:
+			if len(components) < 2:
+				break
+			if p in components:
+				components.remove(p)
+
+		if len(components) == 0:
+			warn(self, 'has no member')
+		elif len(components) >= 2:
+			warn(self, 'has too many members '+
+					'(incomplete category list?)')
+		else:
+			return components[0]
+		return ''
+
+	def fmt_assignees(self):
+		msg = ""
+		for a in sorted(self.assignees):
+			msg += ", {}".format(a.partition(' ')[0])
+		return msg.lstrip(', ')
+
+	def _fmt_engineering_status(self, filt):
+		es = self.engineering_status
+		if es == None:
+			return ()
+
+		es = es.replace('\r', '')
+		es = [ln.replace('plans: ', '').replace('Plans: ', '') for ln in es.split('\n') if filt(ln)]
+
+		return es
+
+	def fmt_engineering_status(self, max_age):
+		def is_current(ln):
+			if len(ln) == 0:
+				return False
+
+			match = re.search(self.re_ymd, ln)
+			if match:
+				try:
+					tstamp = datetime.datetime(
+							int(match.group(1)),
+							int(match.group(2)),
+							int(match.group(3)))
+					age = tstamp.now() - tstamp
+					if age.days > max_age:
+						return False
+					return True
+				except ValueError:
+					warn(self, 'contains bad date ({})'.format(
+						match.group(0)))
+		
+			if ln.startswith("plan") or ln.startswith("Plan"):
+				return False
+
+			warn(self, 'has missing date in engineering status: "%s"' % ln)
+			return True
+
+		return self._fmt_engineering_status(is_current)
+
+	def fmt_engineering_plans(self):
+		def is_plan(ln):
+			return ln.startswith("plan") or ln.startswith("Plan")
+
+		return self._fmt_engineering_status(is_plan)
+
+	def fmt_summary(self, member):
+		return '{}: {} [{}] ({})'.format(member, self.summary, 
+				self.fmt_assignees(), self.key)
+
+	def fmt_comments(self, jira, age=None, recurse=False):
+		comments = list(self.comments)
+		if recurse and self.is_epic():
+			for bp in self.blueprints:
+				comments += bp.comments
+
+		# Filter by date if requested
+		if age:
+			now = datetime.datetime.utcnow().replace(tzinfo=utc)
+			threshold = now - age
+			comments = [g for g in comments
+				if iso8601.parse_date(g.updated) > threshold]
+
+		# Return comments in time sorted order
+		return sorted(comments, key=lambda g: g.updated)
+
+	def fmt_worklog(self, jira, age=None, recurse=False):
+		logs = list(self.worklog)
+		if recurse and self.is_epic():
+			for bp in self.blueprints:
+				logs += bp.worklog
+
+		# Filter by date if requested
+		if age:
+			logs = [g for g in logs
+				if iso8601.parse_date(g.started) >= age[0] and
+				   iso8601.parse_date(g.started) <= age[1]]
+
+		# Return work log in time sorted order
+		return sorted(logs, key=lambda g: g.started)
+
+class Report(object):
+	wrappers = (
+		textwrap.TextWrapper(),
+		textwrap.TextWrapper(initial_indent=' * ', subsequent_indent='   '),
+		textwrap.TextWrapper(initial_indent='   - ', subsequent_indent='     ')
+	)
+
+	def __init__(self, jira):
+		self.jira = jira
+		self.issues = {}
+		self.cards = {}
+		self.blueprints = {}
+		self.members = {}
+
+	def add(self, raw):
+		issue = Issue(raw, self.jira)
+		self.issues[issue.key] = issue
+
+		if issue.is_story() or issue.is_subtask():
+			self.blueprints[issue.key] = issue
+		elif issue.is_epic():
+			self.cards[issue.key] = issue
+
+			components = []
+			for c in issue.fields.components:
+				name = c.name
+				if name in component_aliases:
+					name = component_aliases[name]
+				components.append(name)
+			for p in component_purge:
+				if len(components) < 2:
+					break
+				if p in components:
+					components.remove(p)
+
+			if len(components) == 0:
+				warn(issue, 'has no component')
+			elif len(components) >= 2:
+				warn(issue, 'has too many components '+
+						'(incomplete purge list?)')
+			for name in components:
+				if name not in self.members:
+					self.members[name] = []
+				self.members[name].append(issue)
+			issue.blueprints = []
+		else:
+			warn(issue, 'has unexpected issuetype {}'.format(
+				issue.fields.issuetype.name))
+	
+	def link_blueprints(self):
+		'''Iterate over the blueprints and link them to their cards.'''
+		for b in self.blueprints.itervalues():
+			if not b.parent:
+				warn(b, 'is not linked to an EPIC')
+				continue
+			if b.parent not in self.cards:
+				warn(b, 'is linked to a closed card {}'.format(b.parent))
+				self.add(self.jira.issue(b.parent))
+				if b.parent not in self.cards:
+					warn(b, 'is linked to non-existant {}'.format(b.parent))
+					continue
+	
+			card = self.cards[b.parent]
+			card.assignees |= b.assignees
+			card.blueprints.append(b)
+	
+	@staticmethod
+	def print(msg, level=0):
+		print('\n'.join(Report.wrappers[level].wrap(msg)))
+
+def do_connect():
+	'''Connect to the server using a password from the keyring.'''
+
+	# To store the password, run this from an interactive python session
+	# import keyring; keyring.set_password(server, username, "mysecret")
+	password = keyring.get_password(server, username)
+
+	return JIRA(options={'server': server}, basic_auth=(username, password))
+
+def parse_constraint(args):
+	'''Generate any additional query constraints'''
+	if len(args) == 0:
+		return ''
+	constraint = 'AND ({})'.format(' '.join(args))
+
+	# We employ special handling on the constraint to ensure that the @ symbol
+	# is always escaped. @ is a reserved JQL character so cannot appear in raw
+	# form outside of a string and JQL strings are complex to pass from the
+	# command line. This prevents some contraints from being applied but makes
+	# is easy to pass e-mail address from the shell.
+	return constraint.replace('@', '\\u0040')
+
+def parse_date(s):
+	'''Convert a string to a datetime object.
+
+	Operates by calling out to date (because it has a good relative date parser).
+
+	'''
+	if None == s:
+		s = 'today'
+
+	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
+	date = date.rstrip()
+	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	
+	# TODO: We might jump about a few hours here (date has not been told to give
+	#       back values in UTC
+	return date.replace(tzinfo=utc)
+
+def do_argtest(args):
+	parser = argparse.ArgumentParser(prog="psephology argtest",
+			description="Test argument parsing")
+	parser.add_argument("constraints", nargs="*",
+			help="Any additional JQL contraints")
+	parser.add_argument("--since",
+			help="When to gather information from")
+	parser.add_argument("--until",
+			help="When to stop gathering information")
+	args = parser.parse_args(args)
+
+	print(str_to_datetime(args.since))
+	print(str_to_datetime(args.until))
+
+	print(args.constraints)
+
+def do_weekly(args):
+	parser = argparse.ArgumentParser(prog="psephology weekly",
+			description="Generate a (template) weekly report")
+	parser.add_argument("constraint", nargs="*",
+			help="Any additional JQL contraints")
+	parser.add_argument("--since", default="next-friday -1 weeks -4 days",
+			help="When to gather information from")
+	parser.add_argument("--until",
+			help="When to stop gathering information")
+	args = parser.parse_args(args)
+
+	constraint = parse_constraint(args.constraint)
+	since = parse_date(args.since)
+	until = parse_date(args.until)
+	if until.hour == 0 and until.minute == 0 and until.second == 0:
+		until += datetime.timedelta(hours=23, minutes=59, seconds=59)
+	date_range = (since, until)
+
+	query = 'project = "Premium Services Engineering"'
+	query += ' AND (statusCategory != Complete OR updatedDate >= "{}")'.format(
+			since.strftime("%Y/%m/%d %H:%M"))
+	query += constraint
+
+	jira = do_connect()
+	pse = jira.search_issues(query)
+
+	# Grab each card and add them to the report
+	report = Report(jira)
+	for id in pse:
+		report.add(jira.issue(id))
+	report.link_blueprints()
+
+	# Construct the weekly report skeleton
+	age = datetime.timedelta(days=8)
+
+	report.print('## Progress')
+	for member in sorted(report.members.iterkeys()):
+		for card in sorted(report.members[member], key=lambda x: x.key):
+			report.print('\n')
+			report.print(card.fmt_summary(member), level=1)
+			#for ln in card.fmt_engineering_status(max_age=8):
+			#	report.print(ln, level=2)
+			for log in card.fmt_worklog(jira, age=date_range, recurse=True):
+				for bullet in log.progress:
+					report.print(bullet, level=2)
+			#for comment in card.fmt_comments(jira, age=age, recurse=True):
+			#	for bullet in comment.progress:
+			#		report.print(bullet, level=2)
+
+	report.print('')
+	report.print('## Plans')
+
+	for member in sorted(report.members.iterkeys()):
+		for card in sorted(report.members[member], key=lambda x: x.key):
+			report.print('\n')
+			report.print(card.fmt_summary(member), level=1)
+			#for ln in card.fmt_engineering_plans():
+			#	report.print(ln, level=2)
+			for log in card.fmt_worklog(jira, age=date_range, recurse=True):
+				for bullet in log.plans:
+					report.print(bullet, level=2)
+			#for comment in card.fmt_comments(jira, age=age, recurse=True):
+			#	for bullet in comment.plans:
+			#		report.print(bullet, level=2)
+
+def do_help(argv):
+	print('''\
+usage: psephology [action [args...]]
+
+Run an action of the PSE JIRA database.
+
+''')
+	for b in sorted(builtin):
+		print('  {:<18}{}'.format(b, builtin[b][1]))
+	
+	print('''
+Examples:
+
+  psephology help  Show this help text
+''')
+
+builtin = {
+	"argtest" : (do_argtest,
+		"Run a few arg parser tests"),
+	'help': (do_help,
+		'Show this help text'),
+	'weekly': (do_weekly,
+		'Generate a template weekly report')
+}
+	
+def main(argv):
+	if len(argv) < 2:
+		raise Error("No arguments. Try 'psephology help'.")
+	
+	if argv[1] in builtin.keys():
+		return builtin[argv[1]][0](argv[2:])
+	else:
+		raise Error("Unexpected command. Try 'psephology help'.")
+
+try:
+	sys.exit(main(sys.argv))
+except Error as e:
+	print(e)
+except KeyboardInterrupt:
+	sys.exit(1)
+sys.exit(127)
+
