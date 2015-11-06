@@ -97,6 +97,7 @@ class Issue(object):
 	re_ymd = re.compile('(20[0-9][0-9]).?([0-9][0-9]).?([0-9][0-9])')
 	re_progress = re.compile('^(h[123456]\.|#+)?\s*[Pp]rogress')
 	re_plans = re.compile('^(h[123456]\.|#+)?\s*[Pp]lans?')
+	re_split_worklog = re.compile('\n+ *[*+-]  *|^ *[*+-]  *|\n\n+')
 
 	def __init__(self, issue, jira):
 		self._raw = issue
@@ -124,43 +125,23 @@ class Issue(object):
 			self.parent = issue.fields.parent.key
 		self.url = 'https://projects.linaro.org/browse/' + issue.key
 
-		self._get_comments(jira)
-		self._get_worklog(jira)
+		self._parse_worklog(jira)
 	
-	def _get_comments(self, jira):
-		self.comments = []
-
-		for id in jira.comments(self.key):
-			self.comments.append(jira.comment(self.key, id))
-
-		# Parse into progress and plans
-		for comment in self.comments:
-			comment.progress = []
-			comment.plans = []
-			active = comment.progress
-
-			for ln in comment.body.replace('\r', '').split('\n\n'):
-				ln = ln.replace('\n', ' ').strip()
-				if re.match(self.re_progress, ln):
-					continue
-				if re.match(self.re_plans, ln):
-					active = comment.plans
-					continue
-				active.append(ln)
-
-	def _get_worklog(self, jira):
+	def _parse_worklog(self, jira):
 		self.worklog = []
 
 		for id in jira.worklogs(self.key):
 			self.worklog.append(jira.worklog(self.key, id))
 
-		# Parse into progress and plans
+		# Parse into progress and plans (and automatically un-bullet)
 		for log in self.worklog:
 			log.progress = []
 			log.plans = []
 			active = log.progress
 
-			for ln in log.comment.replace('\r', '').split('\n\n'):
+			comment = log.comment.replace('\r', '')
+
+			for ln in re.split(self.re_split_worklog, log.comment.replace('\r', '')):
 				ln = ln.replace('\n', ' ').strip()
 				if re.match(self.re_progress, ln):
 					continue
@@ -180,7 +161,6 @@ class Issue(object):
 
 	def is_epic(self):
 		return self.fields.issuetype.name == 'Epic'
-
 
 	def categorize(self):
 		lookup = {
@@ -233,77 +213,17 @@ class Issue(object):
 			return components[0]
 		return ''
 
-	def fmt_assignees(self):
+	def get_assignees(self):
 		msg = ""
 		for a in sorted(self.assignees):
 			msg += ", {}".format(a.partition(' ')[0])
 		return msg.lstrip(', ')
 
-	def _fmt_engineering_status(self, filt):
-		es = self.engineering_status
-		if es == None:
-			return ()
-
-		es = es.replace('\r', '')
-		es = [ln.replace('plans: ', '').replace('Plans: ', '') for ln in es.split('\n') if filt(ln)]
-
-		return es
-
-	def fmt_engineering_status(self, max_age):
-		def is_current(ln):
-			if len(ln) == 0:
-				return False
-
-			match = re.search(self.re_ymd, ln)
-			if match:
-				try:
-					tstamp = datetime.datetime(
-							int(match.group(1)),
-							int(match.group(2)),
-							int(match.group(3)))
-					age = tstamp.now() - tstamp
-					if age.days > max_age:
-						return False
-					return True
-				except ValueError:
-					warn(self, 'contains bad date ({})'.format(
-						match.group(0)))
-		
-			if ln.startswith("plan") or ln.startswith("Plan"):
-				return False
-
-			warn(self, 'has missing date in engineering status: "%s"' % ln)
-			return True
-
-		return self._fmt_engineering_status(is_current)
-
-	def fmt_engineering_plans(self):
-		def is_plan(ln):
-			return ln.startswith("plan") or ln.startswith("Plan")
-
-		return self._fmt_engineering_status(is_plan)
-
-	def fmt_summary(self, member):
+	def get_summary(self, member):
 		return '{}: {} [{}] ({})'.format(member, self.summary, 
-				self.fmt_assignees(), self.key)
+				self.get_assignees(), self.key)
 
-	def fmt_comments(self, jira, age=None, recurse=False):
-		comments = list(self.comments)
-		if recurse and self.is_epic():
-			for bp in self.blueprints:
-				comments += bp.comments
-
-		# Filter by date if requested
-		if age:
-			now = datetime.datetime.utcnow().replace(tzinfo=utc)
-			threshold = now - age
-			comments = [g for g in comments
-				if iso8601.parse_date(g.updated) > threshold]
-
-		# Return comments in time sorted order
-		return sorted(comments, key=lambda g: g.updated)
-
-	def fmt_worklog(self, jira, age=None, recurse=False):
+	def get_worklog(self, jira, age=None, recurse=False):
 		logs = list(self.worklog)
 		if recurse and self.is_epic():
 			for bp in self.blueprints:
@@ -325,12 +245,17 @@ class Report(object):
 		textwrap.TextWrapper(initial_indent='   - ', subsequent_indent='     ')
 	)
 
-	def __init__(self, jira):
+	def __init__(self, jira, issues=None):
 		self.jira = jira
 		self.issues = {}
 		self.cards = {}
 		self.blueprints = {}
 		self.members = {}
+
+		if issues:
+			for id in issues:
+				self.add(jira.issue(id))
+			self.link_blueprints()
 
 	def add(self, raw):
 		issue = Issue(raw, self.jira)
@@ -443,7 +368,7 @@ def do_argtest(args):
 
 	print(args.constraints)
 
-def do_weekly(args):
+def do_weekly(argv):
 	parser = argparse.ArgumentParser(prog="psephology weekly",
 			description="Generate a (template) weekly report")
 	parser.add_argument("constraint", nargs="*",
@@ -452,7 +377,7 @@ def do_weekly(args):
 			help="When to gather information from")
 	parser.add_argument("--until",
 			help="When to stop gathering information")
-	args = parser.parse_args(args)
+	args = parser.parse_args(argv)
 
 	constraint = parse_constraint(args.constraint)
 	since = parse_date(args.since)
@@ -467,30 +392,16 @@ def do_weekly(args):
 	query += constraint
 
 	jira = do_connect()
-	pse = jira.search_issues(query)
-
-	# Grab each card and add them to the report
-	report = Report(jira)
-	for id in pse:
-		report.add(jira.issue(id))
-	report.link_blueprints()
-
-	# Construct the weekly report skeleton
-	age = datetime.timedelta(days=8)
+	report = Report(jira, jira.search_issues(query))
 
 	report.print('## Progress')
 	for member in sorted(report.members.iterkeys()):
 		for card in sorted(report.members[member], key=lambda x: x.key):
 			report.print('\n')
-			report.print(card.fmt_summary(member), level=1)
-			#for ln in card.fmt_engineering_status(max_age=8):
-			#	report.print(ln, level=2)
-			for log in card.fmt_worklog(jira, age=date_range, recurse=True):
+			report.print(card.get_summary(member), level=1)
+			for log in card.get_worklog(jira, age=date_range, recurse=True):
 				for bullet in log.progress:
 					report.print(bullet, level=2)
-			#for comment in card.fmt_comments(jira, age=age, recurse=True):
-			#	for bullet in comment.progress:
-			#		report.print(bullet, level=2)
 
 	report.print('')
 	report.print('## Plans')
@@ -498,15 +409,13 @@ def do_weekly(args):
 	for member in sorted(report.members.iterkeys()):
 		for card in sorted(report.members[member], key=lambda x: x.key):
 			report.print('\n')
-			report.print(card.fmt_summary(member), level=1)
-			#for ln in card.fmt_engineering_plans():
-			#	report.print(ln, level=2)
-			for log in card.fmt_worklog(jira, age=date_range, recurse=True):
+			report.print(card.get_summary(member), level=1)
+			for log in card.get_worklog(jira, age=date_range, recurse=True):
 				for bullet in log.plans:
 					report.print(bullet, level=2)
-			#for comment in card.fmt_comments(jira, age=age, recurse=True):
-			#	for bullet in comment.plans:
-			#		report.print(bullet, level=2)
+
+def do_worklog(argv):
+	pass
 
 def do_help(argv):
 	print('''\
