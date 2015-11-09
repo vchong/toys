@@ -313,7 +313,7 @@ class Report(object):
 	def print(msg, level=0):
 		print('\n'.join(Report.wrappers[level].wrap(msg)))
 
-def do_connect():
+def connect_to_jira():
 	'''Connect to the server using a password from the keyring.'''
 
 	# To store the password, run this from an interactive python session
@@ -335,7 +335,7 @@ def parse_constraint(args):
 	# is easy to pass e-mail address from the shell.
 	return constraint.replace('@', '\\u0040')
 
-def parse_date(s):
+def parse_date(s, end_of_day=False):
 	'''Convert a string to a datetime object.
 
 	Operates by calling out to date (because it has a good relative date parser).
@@ -347,29 +347,18 @@ def parse_date(s):
 	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
 	date = date.rstrip()
 	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
-	
-	# TODO: We might jump about a few hours here (date has not been told to give
-	#       back values in UTC
+
+	# TODO: We might jump about a few hours here (date has not been
+	#       told to give back values in UTC
+	date = date.replace(tzinfo=utc)
+
+	if end_of_day and date.hour == 0 and date.minute == 0 and date.second == 0:
+		date += datetime.timedelta(hours=23, minutes=59, seconds=59)
+
 	return date.replace(tzinfo=utc)
 
-def do_argtest(args):
-	parser = argparse.ArgumentParser(prog="psephology argtest",
-			description="Test argument parsing")
-	parser.add_argument("constraints", nargs="*",
-			help="Any additional JQL contraints")
-	parser.add_argument("--since",
-			help="When to gather information from")
-	parser.add_argument("--until",
-			help="When to stop gathering information")
-	args = parser.parse_args(args)
-
-	print(str_to_datetime(args.since))
-	print(str_to_datetime(args.until))
-
-	print(args.constraints)
-
 def do_weekly(argv):
-	parser = argparse.ArgumentParser(prog="psephology weekly",
+	parser = argparse.ArgumentParser(prog="glimpse weekly",
 			description="Generate a (template) weekly report")
 	parser.add_argument("constraint", nargs="*",
 			help="Any additional JQL contraints")
@@ -380,18 +369,15 @@ def do_weekly(argv):
 	args = parser.parse_args(argv)
 
 	constraint = parse_constraint(args.constraint)
-	since = parse_date(args.since)
-	until = parse_date(args.until)
-	if until.hour == 0 and until.minute == 0 and until.second == 0:
-		until += datetime.timedelta(hours=23, minutes=59, seconds=59)
-	date_range = (since, until)
+	date_range = (parse_date(args.since), 
+		      parse_date(args.until, end_of_day=True))
 
 	query = 'project = "Premium Services Engineering"'
 	query += ' AND (statusCategory != Complete OR updatedDate >= "{}")'.format(
-			since.strftime("%Y/%m/%d %H:%M"))
+			date_range[0].strftime("%Y/%m/%d %H:%M"))
 	query += constraint
 
-	jira = do_connect()
+	jira = connect_to_jira()
 	report = Report(jira, jira.search_issues(query))
 
 	report.print('## Progress')
@@ -434,8 +420,6 @@ Examples:
 ''')
 
 builtin = {
-	"argtest" : (do_argtest,
-		"Run a few arg parser tests"),
 	'help': (do_help,
 		'Show this help text'),
 	'weekly': (do_weekly,
