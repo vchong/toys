@@ -56,17 +56,8 @@ utc = UTC()
 # excessive use of verbs.
 #
 hacks = (
-	('CARD:', ''),
-	('BLUEPRINT:', ''),
-	('ENG:', ''),
-	('backport feature', 'backport'),
-	('found in 3.18 LSK to the', 'to'),
-	('Prepare presentation', 'Presentation'),
-	('and its relationship to', 'and'),
-	('for u-boot/linux for', 'for'),
-	('Execute initial test plan ltp-ddt test cases to LAVA for BBB',
-		'LTP-DDT: Initial LAVA integration (using BBB)'),
-	('ZTE power management', 'Power management'),
+	('WIFI', 'WiFi'),
+	('wifi', 'WiFi'),
 )
 
 component_aliases = {
@@ -328,22 +319,20 @@ def parse_constraint(args):
 		return ''
 	constraint = 'AND ({})'.format(' '.join(args))
 
-	# We employ special handling on the constraint to ensure that the @ symbol
-	# is always escaped. @ is a reserved JQL character so cannot appear in raw
-	# form outside of a string and JQL strings are complex to pass from the
-	# command line. This prevents some contraints from being applied but makes
-	# is easy to pass e-mail address from the shell.
+	# We employ special handling on the constraint to ensure that the @
+	# symbol is always escaped. @ is a reserved JQL character so cannot
+	# appear in raw form outside of a string and JQL strings are complex to
+	# pass from the command line. This prevents some contraints from being
+	# applied but makes is easy to pass e-mail address from the shell.
 	return constraint.replace('@', '\\u0040')
 
 def parse_date(s, end_of_day=False):
 	'''Convert a string to a datetime object.
 
-	Operates by calling out to date (because it has a good relative date parser).
+	Operates by calling out to date (because it has a good relative date
+	parser).
 
 	'''
-	if None == s:
-		s = 'today'
-
 	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
 	date = date.rstrip()
 	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
@@ -357,25 +346,11 @@ def parse_date(s, end_of_day=False):
 
 	return date.replace(tzinfo=utc)
 
-def do_weekly(argv):
-	parser = argparse.ArgumentParser(prog="glimpse weekly",
-			description="Generate a (template) weekly report")
-	parser.add_argument("constraint", nargs="*",
-			help="Any additional JQL contraints")
-	parser.add_argument("--since", default="next-friday -1 weeks -4 days",
-			help="When to gather information from")
-	parser.add_argument("--until",
-			help="When to stop gathering information")
-	args = parser.parse_args(argv)
-
-	constraint = parse_constraint(args.constraint)
-	date_range = (parse_date(args.since), 
-		      parse_date(args.until, end_of_day=True))
-
+def do_weekly(args):
 	query = 'project = "Premium Services Engineering"'
 	query += ' AND (statusCategory != Complete OR updatedDate >= "{}")'.format(
-			date_range[0].strftime("%Y/%m/%d %H:%M"))
-	query += constraint
+			args.since.strftime("%Y/%m/%d %H:%M"))
+	query += args.constraint
 
 	jira = connect_to_jira()
 	report = Report(jira, jira.search_issues(query))
@@ -385,7 +360,9 @@ def do_weekly(argv):
 		for card in sorted(report.members[member], key=lambda x: x.key):
 			report.print('\n')
 			report.print(card.get_summary(member), level=1)
-			for log in card.get_worklog(jira, age=date_range, recurse=True):
+			for log in card.get_worklog(
+					jira, age=(args.since, args.until),
+					recurse=True):
 				for bullet in log.progress:
 					report.print(bullet, level=2)
 
@@ -396,44 +373,92 @@ def do_weekly(argv):
 		for card in sorted(report.members[member], key=lambda x: x.key):
 			report.print('\n')
 			report.print(card.get_summary(member), level=1)
-			for log in card.get_worklog(jira, age=date_range, recurse=True):
+			for log in card.get_worklog(
+					jira, age=(args.since, args.until),
+					recurse=True):
 				for bullet in log.plans:
 					report.print(bullet, level=2)
 
-def do_worklog(argv):
-	pass
+def do_monthly(args):
+	do_weekly(args)
 
-def do_help(argv):
-	print('''\
-usage: glimpse [action [args...]]
+def do_worklog(args):
+	date_range = (parse_date(args.since),
+		      parse_date(args.until, end_of_day=True))
 
-Run an action of the PSE JIRA database.
+	query = 'project = "Premium Services Engineering"'
+	query += ' AND updatedDate >= "{}"'.format(
+			date_range[0].strftime("%Y/%m/%d %H:%M"))
+	query += args.constraint
 
-''')
-	for b in sorted(builtin):
-		print('  {:<18}{}'.format(b, builtin[b][1]))
-	
-	print('''
-Examples:
+	jira = connect_to_jira()
+	report = Report(jira, jira.search_issues(query))
 
-  glimpse help  Show this help text
-''')
+	def csv(card, epic):
+		for worklog in card.worklog:
+			print('"{}","{}","{}","{}","{}","{}","{}","{}"'.format(
+				card.key, card.summary, epic.key,
+				card.get_member(), card.get_component(),
+				worklog.started, worklog.timeSpentSeconds,
+				worklog.author.displayName))
 
-builtin = {
-	'help': (do_help,
-		'Show this help text'),
-	'weekly': (do_weekly,
-		'Generate a template weekly report')
-}
-	
+	for member in sorted(report.members.iterkeys()):
+		for epic in sorted(report.members[member], key=lambda x: x.key):
+			csv(epic, epic)
+			for story in epic.blueprints:
+				csv(story, epic)
+
 def main(argv):
-	if len(argv) < 2:
-		raise Error("No arguments. Try 'glimpse help'.")
-	
-	if argv[1] in builtin.keys():
-		return builtin[argv[1]][0](argv[2:])
-	else:
-		raise Error("Unexpected command. Try 'glimpse help'.")
+	parser = argparse.ArgumentParser()
+	subparsers = parser.add_subparsers()
+
+	# create the parser for the "weekly" command
+	s = subparsers.add_parser("weekly",
+			help="Generate a (template) weekly report")
+	s.add_argument("--since", default="next-friday -1 weeks -4 days",
+			help="When to gather information from")
+	s.add_argument("--until", default="tomorrow",
+			help="When to stop gathering information")
+	s.add_argument("constraint", nargs="*",
+			help="Any additional JQL contraints")
+	s.set_defaults(func=do_weekly)
+
+	# create the parser for the "monthly" command
+	s = subparsers.add_parser("monthly",
+			help="Generate a (template) monthly report")
+	s.add_argument("--since", default="last month -{} days 00:00:00".format(
+					datetime.date.today().day - 1),
+			help="When to gather information from")
+	s.add_argument("--until", default="-{} days 23:59:59".format(
+					datetime.date.today().day),
+			help="When to stop gathering information")
+	s.add_argument("constraint", nargs="*",
+			help="Any additional JQL contraints")
+	s.set_defaults(func=do_monthly)
+
+
+	# create the parser for the "worklog" command
+	s = subparsers.add_parser("worklog",
+			help="Summarize worklog entries for analysis")
+	s.add_argument("--since", default="now -2 months",
+			help="When to gather information from")
+	# worklog does not have any age filtering
+	#s.add_argument("--until", default="tomorrow",
+	#		help="When to stop gathering information")
+	s.add_argument("constraint", nargs="*",
+			help="Any additional JQL contraints")
+	s.set_defaults(func=do_worklog)
+
+	args = parser.parse_args(argv[1:])
+
+	if 'constraint' in args:
+		args.constraint = parse_constraint(args.constraint)
+	if 'since' in args:
+		args.since = parse_date(args.since)
+	if 'until' in args:
+		args.until = parse_date(args.until, end_of_day=True)
+
+	args.func(args)
 
 try:
 	sys.exit(main(sys.argv))
