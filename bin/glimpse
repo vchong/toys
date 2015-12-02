@@ -380,7 +380,58 @@ def do_weekly(args):
 					report.print(bullet, level=2)
 
 def do_monthly(args):
-	do_weekly(args)
+	query = 'project = "Premium Services Engineering"'
+	query += ' AND (statusCategory != Complete OR updatedDate >= "{}")'.format(
+			args.since.strftime("%Y/%m/%d %H:%M"))
+	query += args.constraint
+
+	jira = connect_to_jira()
+	report = Report(jira, jira.search_issues(query))
+
+	print('''\
+<html>
+<head>
+<title>Monthly report: {} to {}</title>
+</head>
+<body>
+<table border=2>
+<tr>
+<td>Member</td>
+<td>Accomplishments</td>
+<td>Next Month's Plans</td>
+</tr>
+'''.format(args.since.strftime("%Y/%m/%d %H:%M"),
+	args.until.strftime("%Y/%m/%d %H:%M")))
+
+	for member in sorted(report.members.iterkeys()):
+		print('<tr><td>{}</td>'.format(member))
+		print('<td><ul>')
+		for card in sorted(report.members[member], key=lambda x: x.key):
+			print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+				card.summary, card.url, card.key))
+			for log in card.get_worklog(
+					jira, age=(args.since, args.until),
+					recurse=True):
+				for bullet in log.progress:
+					print('<li>{}</li>'.format(bullet))
+			print('</ul></li>')
+		print('</ul></td>')
+		print('<td><ul>')
+		for card in sorted(report.members[member], key=lambda x: x.key):
+			print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+				card.summary, card.url, card.key))
+			for log in card.get_worklog(
+					jira, age=(args.since, args.until),
+					recurse=True):
+				for bullet in log.plans:
+					print('<li>{}</li>'.format(bullet))
+			print('</ul></li>')
+		print('</ul></td>')
+		print('</tr>')
+	print ('''\
+</table>
+</body>
+''')
 
 def do_worklog(args):
 	date_range = (parse_date(args.since),
