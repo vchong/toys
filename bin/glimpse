@@ -434,12 +434,9 @@ def do_monthly(args):
 ''')
 
 def do_worklog(args):
-	date_range = (parse_date(args.since),
-		      parse_date(args.until, end_of_day=True))
-
 	query = 'project = "Premium Services Engineering"'
 	query += ' AND updatedDate >= "{}"'.format(
-			date_range[0].strftime("%Y/%m/%d %H:%M"))
+			args.since.strftime("%Y/%m/%d %H:%M"))
 	query += args.constraint
 
 	jira = connect_to_jira()
@@ -491,7 +488,7 @@ def main(argv):
 	# create the parser for the "worklog" command
 	s = subparsers.add_parser("worklog",
 			help="Summarize worklog entries for analysis")
-	s.add_argument("--since", default="now -2 months",
+	s.add_argument("--since", default="2015-01-01",
 			help="When to gather information from")
 	# worklog does not have any age filtering
 	#s.add_argument("--until", default="tomorrow",
