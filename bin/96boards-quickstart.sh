@@ -24,8 +24,8 @@ sudo sed -ie 's/PermitRootLogin without-password/PermitRootLogin yes/' \
 	/etc/ssh/sshd_config
 sudo systemctl reload sshd
 
-sudo apt update
-sudo apt install \
+sudo apt-get update
+sudo apt-get -y install \
 	mosh tmux rsync \
 	make \
 	man-db \
