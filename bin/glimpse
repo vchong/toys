@@ -86,8 +86,8 @@ def warn(issue, msg):
 
 class Issue(object):
 	re_ymd = re.compile('(20[0-9][0-9]).?([0-9][0-9]).?([0-9][0-9])')
-	re_progress = re.compile('^(h[123456]\.|#+)?\s*[Pp]rogress')
-	re_plans = re.compile('^(h[123456]\.|#+)?\s*[Pp]lans?')
+	re_progress = re.compile('^(h[123456]\.|#+)?\s*[Pp]rogress\s*')
+	re_plans = re.compile('^(h[123456]\.|#+)?\s*[Pp]lans\s*')
 	re_split_worklog = re.compile('\n+ *[*+-]  *|^ *[*+-]  *|\n\n+')
 
 	def __init__(self, issue, jira):
@@ -134,12 +134,18 @@ class Issue(object):
 
 			for ln in re.split(self.re_split_worklog, log.comment.replace('\r', '')):
 				ln = ln.replace('\n', ' ').strip()
-				if re.match(self.re_progress, ln):
-					continue
-				if re.match(self.re_plans, ln):
+
+				m = re.match(self.re_progress, ln)
+				if m:
+					ln = ln[m.end():]
+
+				m = re.match(self.re_plans, ln)
+				if m:
 					active = log.plans
-					continue
-				active.append(ln)
+					ln = ln[m.end():]
+
+				if ln:
+					active.append(ln)
 
 	def is_story(self):
 		return self.fields.issuetype.name == 'Story'
