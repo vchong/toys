@@ -17,7 +17,7 @@ setxkbmap gb
 echo "Need a new password for root user..."
 sudo passwd root
 echo "Need a new password for 'linaro' user..."
-passwd
+passwd linaro
 
 # Allow root SSH login (useful for make modules_install via sshfs)
 sudo sed -ie 's/PermitRootLogin without-password/PermitRootLogin yes/' \
@@ -26,10 +26,15 @@ sudo systemctl reload sshd
 
 sudo apt-get update
 sudo apt-get -y install \
+	automake libtool build-essential fakeroot devscripts debhelper \
+	patchelf \
 	mosh tmux rsync \
+	perl-base \
 	make \
 	man-db \
-	vim-nox
+	vim-nox \
+	arduino-mk arduino git swig3.0 python-dev nodejs-dev \
+	cmake pkg-config libpcre3-dev
 
 mkdir -p ~/Projects
 
