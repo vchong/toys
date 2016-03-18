@@ -245,6 +245,16 @@ class Report(object):
 
 		if issues:
 			for id in issues:
+				# Check for links to "alien" JIRA projects
+				links = jira.issue(id).fields.issuelinks
+				if len(links) != 0:
+					for link in links:
+						if hasattr(link, 'outwardIssue'):
+							rel = link.outwardIssue
+						else:
+							rel = link.inwardIssue
+						self.add(jira.issue(rel.key))
+
 				self.add(jira.issue(id))
 			self.link_blueprints()
 
@@ -263,6 +273,11 @@ class Report(object):
 				if name in component_aliases:
 					name = component_aliases[name]
 				components.append(name)
+
+			# Anything from an "alien" JIRA project is implicitly a Linaro task
+			if not issue.key.startswith('PSE-'):
+				components.append('Linaro')
+
 			for p in component_purge:
 				if len(components) < 2:
 					break
