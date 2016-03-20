@@ -1,0 +1,12 @@
+#!/bin/sh
+
+#
+# forget-host
+#
+# Remove a line from $HOME/.ssh/known_hosts . If you spend a lot of time
+# reflashing developer boards you know what this is for!
+#
+
+mv ~/.ssh/known_hosts ~/.ssh/known_hosts.bak
+grep -v "$*" < ~/.ssh/known_hosts.bak > ~/.ssh/known_hosts
+
