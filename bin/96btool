@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+
+import argparse
+import datetime
+import iso8601
+import json
+import requests
+import requests_cache
+import subprocess
+import sys
+import os
+import textwrap
+from lxml import html
+
+# Enable caching throughout
+requests_cache.install_cache()
+
+class Error(Exception):
+	'''Application Specific Error type. It is only sub-classed to
+	make it easier to spot; it adds not functionality versus the
+	parent.
+
+	'''
+	pass
+
+def parse_date(s, end_of_day=False):
+	'''Convert a string to a datetime object.
+
+	Operates by calling out to date (because it has a good relative date
+	parser).
+
+	'''
+	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
+	date = str(date, 'utf-8')
+	date = date.rstrip()
+	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+
+	# TODO: We might jump about a few hours here (date has not been
+	#       told to give back values in UTC)
+	date = date.replace(tzinfo=iso8601.UTC)
+
+	if end_of_day and date.hour == 0 and date.minute == 0 and date.second == 0:
+		date += datetime.timedelta(hours=23, minutes=59, seconds=59)
+
+	return date.replace(tzinfo=iso8601.UTC)
+
+def get_replies(made_by='danielt', pageno=1):
+	#print('get_replies({}, {})'.format(made_by, pageno), file=sys.stderr)
+	with requests_cache.disabled():
+		page = requests.get('http://www.96boards.org/members/{}/forums/replies/page/{}/'.format(made_by, pageno))
+	if not page.ok:
+		return None
+	tree = html.fromstring(page.content)
+
+	dates = tree.xpath('//span[@class="bbp-reply-post-date"]/text()')
+	links = tree.xpath('//a[@class="bbp-reply-permalink"]')
+	links = [ l.get('href') for l in links ]
+
+	dates = [ datetime.datetime.strptime(d, 
+			'%B %d, %Y at %I:%M %p').replace(tzinfo=iso8601.UTC)
+			for d in dates ]
+	titles = [ get_title(uri) for uri in links ]
+	posts = [ { 'date': d, 'subject': t, 'uri': l }
+			for (d, t, l) in zip(dates, titles, links)]
+
+	return posts
+
+def get_title(uri):
+	#print('get_title({})'.format(uri), file=sys.stderr)
+
+	page = requests.get(uri)
+	tree = html.fromstring(page.content)
+	titles = tree.xpath('//meta[@property="og:title"]')
+
+	# There may be more than one title. At present these differ only in
+	# that some are post-fixed by the name of the blog. For that reason
+	# we grab the common prefix (os.path.commonprefix does not require
+	# that it be used on a path).
+	return os.path.commonprefix([ t.get('content') for t in titles ])
+
+def do_fetch(args):
+	since = parse_date(args.since)
+
+	posts = get_replies(args.nick)
+
+	# Fetch more pages until we reach the target date
+	pageno = 2
+	while posts[-1]['date'] > since:
+		more = get_replies(args.nick, pageno)
+		if not more:
+			break
+		posts += more
+		pageno += 1
+
+	# Filter out any posts that are too old
+	posts = [ p for p in posts if p['date'] > since ]
+
+	# Sort by date (the output of the blog tool is almost, but not quite,
+	# in reverse date order)
+	posts = sorted(posts, key=lambda k: k['date'])
+
+	for p in posts:
+		p['date'] = p['date'].isoformat()
+		p['id'] = p['uri'].split('-')[-1]
+
+	json.dump(posts, sys.stdout)
+
+def do_weekly(args):
+	wrappers = (
+		textwrap.TextWrapper(),
+		textwrap.TextWrapper(initial_indent=' * ', subsequent_indent='   '),
+		textwrap.TextWrapper(initial_indent='   - ', subsequent_indent='     ')
+	)
+
+	def wrap(msg, level=1):
+		print('\n'.join(wrappers[level].wrap(msg)))
+
+	wrap("96Boards forum activity", level=1)
+	for p in json.loads(sys.stdin.read()):
+		wrap('{} (post-{})'.format(p['subject'], p['id']), level=2)
+
+def main(argv):
+	parser = argparse.ArgumentParser()
+	subparsers = parser.add_subparsers()
+
+	s = subparsers.add_parser('fetch')
+	s.add_argument("--nick", default="danielt",
+		        help="Nickname to fetch replies from");
+	s.add_argument("--since", default="2012-01-01",
+			help="When to gather information from")
+	s.set_defaults(func=do_fetch)
+
+	s = subparsers.add_parser('weekly')
+	s.set_defaults(func=do_weekly)
+
+	args = parser.parse_args(argv[1:])
+	args.func(args)
+
+if __name__ == "__main__":
+	try:
+		sys.exit(main(sys.argv))
+	except Error as e:
+		print(e)
+	except KeyboardInterrupt:
+		sys.exit(1)
+	sys.exit(127)
+
