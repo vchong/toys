@@ -17,7 +17,7 @@ setxkbmap gb
 echo "Need a new password for root user..."
 sudo passwd root
 echo "Need a new password for 'linaro' user..."
-passwd linaro
+passwd
 
 # Allow root SSH login (useful for make modules_install via sshfs)
 sudo sed -ie 's/PermitRootLogin without-password/PermitRootLogin yes/' \
@@ -34,9 +34,10 @@ sudo apt-get -y install \
 	man-db \
 	vim-nox \
 	arduino-mk arduino git swig3.0 python-dev nodejs-dev \
-	cmake pkg-config libpcre3-dev
+	cmake pkg-config libpcre3-dev \
+	libfdt-dev
 
-mkdir -p ~/Projects
+mkdir -p ~/Projects/upstream
 
 pushd ~/Projects
 git clone https://github.com/daniel-thompson/toys.git
@@ -45,3 +46,9 @@ make
 mv ~/public ~/Apps
 popd
 
+# This is only really useful on a db410c but I've been too lazy to
+# figure out how to determine the machine type on arm64...
+pushd ~/Projects/upstream
+git clone git://codeaurora.org/quic/kernel/skales
+popd
+echo 'path-append $HOME/Projects/upstream/skales' > $HOME/.bashrc.d/skales.sh
