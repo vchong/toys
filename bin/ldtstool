@@ -1,0 +1,445 @@
+#!/usr/bin/env python3
+
+import argparse
+import datetime
+import iso8601
+import json
+import getpass
+import re
+import textwrap
+import subprocess
+import sys
+
+# Import keyring, suppressing any warnings from gi when we do so
+try:
+	import gi
+	gi.require_version('GnomeKeyring', '1.0')
+except:
+	pass
+import keyring
+
+# Try to import zdesk, failure is non-fatal since this is only needed for
+# online support (the fetch sub-tool)
+try:
+	import zdesk
+	server = 'https://linaro.zendesk.com'
+	username = 'daniel.thompson@linaro.org'
+except:
+	print("zdesk module not found - no online support", file=sys.stderr)
+
+class Error(Exception):
+	'''Application Specific Error type. It is only sub-classed to
+	make it easier to spot; it adds not functionality versus the
+	parent.
+
+	'''
+	pass
+
+class UTC(datetime.tzinfo):
+	ZERO = datetime.timedelta(0)
+
+	def utcoffset(self, dt):
+		return self.ZERO
+
+	def tzname(self, dt):
+		return "UTC"
+
+	def dst(self, dt):
+		return self.ZERO
+
+utc = UTC()
+def parse_date(s, end_of_day=False):
+	'''Convert a string to a datetime object.
+
+	Operates by calling out to date (because it has a good relative date
+	parser).
+
+	'''
+	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
+	date = str(date, 'utf-8')
+	date = date.rstrip()
+	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+
+	# TODO: We might jump about a few hours here (date has not been
+	#       told to give back values in UTC)
+	date = date.replace(tzinfo=utc)
+
+	if end_of_day and date.hour == 0 and date.minute == 0 and date.second == 0:
+		date += datetime.timedelta(hours=23, minutes=59, seconds=59)
+
+	return date.replace(tzinfo=utc)
+
+class Ticket(dict):
+	def _safe_get_string_field(self, attr, field):
+		if not self[attr]:
+			return ''
+		val = self[attr][field]
+		if not val:
+			return ''
+		return val
+
+	def assignee(self, field):
+		return self._safe_get_string_field('assignee', field)
+
+	def created_at(self):
+		return iso8601.parse_date(self['created_at'])
+
+	def id(self):
+		return 'LDTS-{:04d}'.format(self['id'])
+
+	def organization(self, field):
+		if 'organization' not in self:
+			return ''
+		try:
+			return self['organization'][field]
+		except TypeError:
+			# Occasionally the organization is an integer
+			# (and therefore not sub-scriptable)
+			return ''
+
+	def orgname(self):
+		org = self.organization('name')
+		if not org:
+			return 'Community'
+
+		if org == "Segment_Group":
+			email = self['requester']['email']
+			org = email.split('@', maxsplit=1)[1]
+			if org.count('.') == 1 and org.endswith('.com'):
+				org = org[:-4].capitalize()
+
+		return org
+
+	def requester(self, field):
+		return self._safe_get_string_field('requester', field)
+
+	def updated_at(self):
+		return iso8601.parse_date(self['updated_at'])
+
+	def is_community(self):
+		return self.orgname() == 'Community'
+
+	def is_within_date(self, since=None, until=None):
+		created_at = self.created_at()
+		updated_at = self.updated_at()
+
+		if not since and not until:
+			return True
+
+		if not until:
+			return created_at >= since or updated_at >= since
+
+		if not since:
+			return created_at <= until or updated_at <= until
+
+		return (created_at >= since and created_at <= until) or \
+		       (updated_at >= since and updated_at <= until)
+
+	def is_tagged(self, needle, exact=False):
+		for tag in self['tags']:
+			if (exact and needle == tag) or \
+			   (not exact and needle in tag):
+				return True
+		return False
+
+	@staticmethod
+	def fetch(since=None, until=None):
+		# To store the password, run this from an interactive python session
+		# after setting server and username as shown further up this script.
+		# import keyring; keyring.set_password(server, username, "mysecret")
+		password = keyring.get_password(server, username)
+
+		organizations = {}
+		def get_organization(id):
+			if not id:
+				return None
+
+			if id not in organizations:
+				organizations[id] = zd.organization_show(id)
+
+			return organizations[id]['organization']
+
+		users = {}
+		def get_user(id):
+			if not id:
+				return None
+
+			if id not in users:
+				users[id] = zd.user_show(id)
+
+			return users[id]['user']
+
+		zd = zdesk.Zendesk(server, username, password)
+
+		tickets = [ Ticket(t) for t in zd.tickets_list(get_all_pages=True)['tickets'] ] 
+
+		# Filter by date as early as possible so we can reduce network round trips
+		tickets = [ t for t in tickets if t.is_within_date(since, until) ]
+
+
+		for t in tickets:
+			t['organization'] = get_organization(t['organization_id'])
+			t['assignee'] = get_user(t['assignee_id'])
+			t['requester'] = get_user(t['requester_id'])
+
+		return tickets
+
+	@staticmethod
+	def loads(raw):
+		try:
+			data = json.loads(raw)
+		except json.decoder.JSONDecodeError as e:
+			if e.lineno != 2 or e.colno != 1:
+				raise e
+
+			data = []
+			for ln in raw.splitlines():
+				data.append(json.loads(ln))
+
+		tickets = [ Ticket(t) for t in data ]
+		return tickets
+
+def do_count(args):
+	tickets = Ticket.loads(sys.stdin.read())
+
+	count = {}
+	def count_into(x):
+		if not x in count:
+			count[x] = 1
+		else:
+			count[x] += 1
+	
+	def show_count():
+		if args.csv:
+			for k in sorted(count.keys()):
+				print('"{}",{}'.format(k, count[k]))
+		else:
+			json.dump(count, sys.stdout, sort_keys=True)
+
+	if args.by_member:
+		for t in tickets:
+			count_into(t.orgname())
+		show_count()
+		return
+
+	if args.by_month:
+		for t in tickets:
+			if not t['assignee']:
+				continue
+			created_at = iso8601.parse_date(t['created_at'])
+			count_into('{:04d}-{:02d}'.format(created_at.year, created_at.month))
+		show_count()
+		return
+
+	if args.by_category:
+		hacks = {
+			'android_lmg': 'android',
+			'board_support': 'board', 
+			'home_lhg': 'home',
+			'kernel_kwg': 'kernel',
+			'linaro_lsk': 'kernel',
+			'lava_infrastrucure': 'lava',
+			'toolchain_tcwg': 'toolchain',
+			'qemu_vritualization': 'qemu',
+			'networking_lng': 'networking',
+			'open_embedded_oe': 'distros',
+			'open_embedded': 'distros',
+			'ubuntu': 'distros',
+			'power_management_pmwg': 'power',
+			'power_management': 'power',
+			'eas': 'power',
+			'security_swg': 'security',
+		}
+		def hack(x):
+			if x in hacks:
+				return hacks[x]
+			return x
+
+		unknown = set()
+		globs = ( 'android', 'board', 'kernel', 'power', 'graphics', 'lava', 'qemu', 'toolchain', 'security', 'distros', '96boards', 'home', 'networking' )
+		nonglobs = set(('socionext', 'spam', 'arm', 'closed_by_merge', 'community', 'eng_escalate', 'hisi', 'huawei', 'internal_linaro', 'launchpad', 'level_0', 'level_1', 'level_2', 'level_3', 'linaro', 'open', 'other', 'probe', 'questions_issues_on_releases', 'release', 'releases.linaro.org', 'segment_group', 'spreadtrum', 'support', 'team', 'ti'))
+
+		for t in tickets:
+			t['tags'] = [ hack(x) for x in t['tags'] ]
+
+			found = None
+			for g in globs:
+				if g in t['tags']:
+					if g in hacks:
+						g = hacks[g]
+					count_into(g)
+					found = g
+					break
+
+			if not found:
+				unknown |= set(t['tags']) - nonglobs
+
+		if len(unknown):
+			print(sorted(unknown))
+		show_count()
+		return
+
+	print(len(tickets))
+
+def do_days(args):
+	for t in Ticket.loads(sys.stdin.read()):
+		created_at = iso8601.parse_date(t['created_at'])
+		updated_at = iso8601.parse_date(t['updated_at'])
+		days = updated_at - created_at
+
+		print('"LDTS-{:04d}",{}'.format(t['id'], days.days+1))
+
+def do_fetch(args):
+	since = parse_date(args.since)
+	until = parse_date(args.until)
+
+	tickets = Ticket.fetch(since, until)
+
+	json.dump(tickets, sys.stdout)
+
+def do_filter(args):
+	since = parse_date(args.since)
+	until = parse_date(args.until)
+
+	data = Ticket.loads(sys.stdin.read())
+
+	data = [ t for t in data if t.is_within_date(since, until) ]
+
+	if args.assignee:
+		data = [t for t in data 
+			if args.assignee in t.assignee('name') or \
+			   args.assignee in t.assignee('email')]
+	if args.community:
+		data = [ t for t in data if t.is_community() ]
+	if args.member:
+		data = [ t for t in data if not t.is_community() ]
+	if args.tags:
+		data = [ t for t in data if t.is_tagged(args.tags) ]
+	
+	json.dump(data, sys.stdout)
+
+def do_format(args):
+	for t in Ticket.loads(sys.stdin.read()):
+		ln = args.template
+		for m in re.finditer('{([^}:]+)([^}]*)}', args.template):
+			field = m.group(1)
+			fmt = m.group(2)
+
+			try:
+				if 'id' == field:
+					val = t.id()
+				elif 'orgname' == field:
+					val = t.orgname()
+				elif '-' in field:
+					(field, attr) = field.split('-', 1)
+					val = t[field][attr]
+				else:
+					val = t[field]
+			except KeyError:
+				continue
+
+			ln = ln.replace(m.group(0), '{{{}}}'.format(fmt).format(val))
+		print(ln)
+
+def do_passwd(args):
+	keyring.set_password(server, username, getpass.getpass())
+
+def do_tags(args):
+	tickets = Ticket.loads(sys.stdin.read())
+
+	tags = set()
+	for t in tickets:
+		tags |= set(t['tags'])
+	
+	for t in sorted(tags):
+		print(t)
+
+def do_weekly(args):
+	wrappers = (
+		textwrap.TextWrapper(),
+		textwrap.TextWrapper(initial_indent=' * ', subsequent_indent='   '),
+		textwrap.TextWrapper(initial_indent='   - ', subsequent_indent='     ')
+	)
+
+	def wrap(msg, level=1):
+		print('\n'.join(wrappers[level].wrap(msg)))
+
+	headings = []
+	for t in Ticket.loads(sys.stdin.read()):
+		organization = t.orgname()
+		subject = t['subject']
+		assignee = t.assignee('name').split(' ', 1)[0]
+		ticket_num = t['id']
+		
+		headings.append('{}: {} [{}] (LDTS-{})'.format(organization, subject, 
+				assignee, ticket_num))
+	
+	for h in sorted(headings):
+		wrap(h)
+
+def main(argv):
+	parser = argparse.ArgumentParser()
+	subparsers = parser.add_subparsers()
+
+	s = subparsers.add_parser('count')
+	s.add_argument('--by-member', action='store_true')
+	s.add_argument('--by-category', action='store_true')
+	s.add_argument('--by-month', action='store_true')
+	s.add_argument('--csv', action='store_true')
+	s.set_defaults(func=do_count)
+
+	s = subparsers.add_parser('csv')
+	s.set_defaults(func=do_format,
+			template='"{id}","{subject}","{orgname}","{requester-email}"')
+
+	s = subparsers.add_parser('days')
+	s.set_defaults(func=do_days)
+
+	s = subparsers.add_parser('fetch')
+	s.add_argument("--since", default="2012-01-01",
+			help="When to gather information from")
+	s.add_argument("--until", default="tomorrow",
+			help="When to stop gathering information")
+	s.set_defaults(func=do_fetch)
+
+	s = subparsers.add_parser("filter")
+	s.add_argument("--since", default="2012-01-01",
+			help="When to gather information from")
+	s.add_argument("--until", default="tomorrow",
+			help="When to stop gathering information")
+	s.add_argument("--assignee")
+	s.add_argument("--community", action='store_true')
+	s.add_argument("--member", action='store_true')
+	s.add_argument("--tags")
+	s.set_defaults(func=do_filter)
+
+	s = subparsers.add_parser("format")
+	s.add_argument("--template",
+			default="{id}: {subject} ({orgname} - {requester-email})")
+	s.set_defaults(func=do_format)
+
+	s = subparsers.add_parser('passwd')
+	s.set_defaults(func=do_passwd)
+
+	s = subparsers.add_parser('summary')
+	s.set_defaults(func=do_format,
+			template="{id}: {subject} ({orgname} - {requester-email})")
+
+	s = subparsers.add_parser('tags')
+	s.set_defaults(func=do_tags)
+
+	s = subparsers.add_parser('weekly')
+	s.set_defaults(func=do_weekly)
+
+	args = parser.parse_args(argv[1:])
+	args.func(args)
+
+if __name__ == "__main__":
+	try:
+		sys.exit(main(sys.argv))
+	except Error as e:
+		print(e)
+	except KeyboardInterrupt:
+		sys.exit(1)
+	sys.exit(127)
+
