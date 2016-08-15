@@ -15,14 +15,6 @@ from lxml import html
 # Enable caching throughout
 requests_cache.install_cache()
 
-class Error(Exception):
-	'''Application Specific Error type. It is only sub-classed to
-	make it easier to spot; it adds not functionality versus the
-	parent.
-
-	'''
-	pass
-
 def parse_date(s, end_of_day=False):
 	'''Convert a string to a datetime object.
 
@@ -139,8 +131,6 @@ def main(argv):
 if __name__ == "__main__":
 	try:
 		sys.exit(main(sys.argv))
-	except Error as e:
-		print(e)
 	except KeyboardInterrupt:
 		sys.exit(1)
 	sys.exit(127)
