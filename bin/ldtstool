@@ -27,14 +27,6 @@ try:
 except:
 	print("zdesk module not found - no online support", file=sys.stderr)
 
-class Error(Exception):
-	'''Application Specific Error type. It is only sub-classed to
-	make it easier to spot; it adds not functionality versus the
-	parent.
-
-	'''
-	pass
-
 class UTC(datetime.tzinfo):
 	ZERO = datetime.timedelta(0)
 
@@ -437,8 +429,6 @@ def main(argv):
 if __name__ == "__main__":
 	try:
 		sys.exit(main(sys.argv))
-	except Error as e:
-		print(e)
 	except KeyboardInterrupt:
 		sys.exit(1)
 	sys.exit(127)
