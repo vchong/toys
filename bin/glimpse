@@ -9,6 +9,7 @@
 import argparse
 import configparser
 import datetime
+import getpass
 from jira.client import JIRA
 import iso8601
 import os
@@ -476,6 +477,10 @@ def do_monthly(args):
 </body>
 ''')
 
+def do_passwd(args):
+	cfg = get_config()['jira']
+	keyring.set_password(cfg['server'], cfg['username'], getpass.getpass())
+
 def do_worklog(args):
 	query = 'project = "Premium Services Engineering"'
 	query += ' AND updatedDate >= "{}"'.format(
@@ -527,6 +532,11 @@ def main(argv):
 			help="Any additional JQL contraints")
 	s.set_defaults(func=do_monthly)
 
+
+	# create the parser for the "passwd" command
+	s = subparsers.add_parser("passwd",
+			help="Store your JIRA password on the keyring")
+	s.set_defaults(func=do_passwd)
 
 	# create the parser for the "worklog" command
 	s = subparsers.add_parser("worklog",
