@@ -12,12 +12,18 @@ import datetime
 from jira.client import JIRA
 import iso8601
 import os
-import keyring
 import re
 import textwrap
 import subprocess
 import sys
 
+# Import keyring, suppressing any warnings from gi when we do so
+try:
+    import gi
+    gi.require_version('GnomeKeyring', '1.0')
+except:
+    pass
+import keyring
 
 class UTC(datetime.tzinfo):
     ZERO = datetime.timedelta(0)
