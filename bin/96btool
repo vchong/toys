@@ -36,7 +36,7 @@ def parse_date(s, end_of_day=False):
 
 	return date.replace(tzinfo=iso8601.UTC)
 
-def get_replies(made_by='danielt', pageno=1):
+def get_replies(made_by, pageno=1):
 	#print('get_replies({}, {})'.format(made_by, pageno), file=sys.stderr)
 	with requests_cache.disabled():
 		page = requests.get('http://www.96boards.org/members/{}/forums/replies/page/{}/'.format(made_by, pageno))
