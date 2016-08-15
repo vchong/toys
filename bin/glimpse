@@ -7,17 +7,17 @@
 #
 
 import argparse
+import configparser
 import datetime
 from jira.client import JIRA
 import iso8601
+import os
 import keyring
 import re
 import textwrap
 import subprocess
 import sys
 
-server = 'https://projects.linaro.org'
-username = 'daniel.thompson@linaro.org'
 
 class UTC(datetime.tzinfo):
     ZERO = datetime.timedelta(0)
@@ -314,14 +314,40 @@ class Report(object):
 	def print(msg, level=0):
 		print('\n'.join(Report.wrappers[level].wrap(msg)))
 
+def get_config():
+	'''Open (or create) a config file.'''
+	filename = os.environ['HOME'] + os.sep + '.linaro_toys'
+
+	cfg = configparser.ConfigParser()
+	try:
+		cfg.read(filename)
+	except:
+		pass
+
+	if 'jira' not in cfg:
+		cfg['jira'] = {}
+
+	orig = dict(cfg['jira'])
+	if 'server' not in cfg['jira']:
+		cfg['jira']['server'] = 'https://projects.linaro.org'
+	if 'username' not in cfg['jira']:
+		cfg['jira']['username'] = 'daniel.thompson@linaro.org'
+
+	if orig != cfg['jira']:
+		with open(filename, 'w') as f:
+			cfg.write(f)
+		print('{} was updated. Please check and re-run.'.format(filename),
+				file=sys.stderr)
+		sys.exit(1)
+
+	return cfg
+
 def connect_to_jira():
 	'''Connect to the server using a password from the keyring.'''
-
-	# To store the password, run this from an interactive python session
-	# import keyring; keyring.set_password(server, username, "mysecret")
-	password = keyring.get_password(server, username)
-
-	return JIRA(options={'server': server}, basic_auth=(username, password))
+	cfg = get_config()['jira']
+	password = keyring.get_password(cfg['server'], cfg['username'])
+	return JIRA(options={'server': cfg['server']},
+		    basic_auth=(cfg['username'], password))
 
 def parse_constraint(args):
 	'''Generate any additional query constraints'''
