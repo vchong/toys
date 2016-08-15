@@ -19,14 +19,6 @@ import sys
 server = 'https://projects.linaro.org'
 username = 'daniel.thompson@linaro.org'
 
-class Error(Exception):
-	'''Application Specific Error type. It is only sub-classed to
-	make it easier to spot; it adds not functionality versus the
-	parent.
-
-	'''
-	pass
-
 class UTC(datetime.tzinfo):
     ZERO = datetime.timedelta(0)
 
@@ -529,8 +521,6 @@ def main(argv):
 
 try:
 	sys.exit(main(sys.argv))
-except Error as e:
-	print(e)
 except KeyboardInterrupt:
 	sys.exit(1)
 sys.exit(127)
