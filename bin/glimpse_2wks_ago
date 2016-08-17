@@ -465,7 +465,7 @@ def parse_date(s, end_of_day=False):
 	#date = date.rstrip()
 	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
 	today = datetime.date.today()
-	lmon = today - datetime.timedelta(days=today.weekday(), weeks=1)
+	lmon = today - datetime.timedelta(days=today.weekday(), weeks=2)
 	date = str(lmon)
 	print("Report starting from", date)
 	date = datetime.datetime.strptime(date, "%Y-%m-%d")
@@ -488,7 +488,7 @@ def parse_date2(s, end_of_day=False):
 	'''
 	#vvc
 	today = datetime.date.today()
-	lsun = today - datetime.timedelta(days=today.weekday()) + datetime.timedelta(days=-1)
+	lsun = today - datetime.timedelta(days=today.weekday()) + datetime.timedelta(days=-8)
 	date = str(lsun)
 	print("Report ending at", date)
 	date = datetime.datetime.strptime(date, "%Y-%m-%d")

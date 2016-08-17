@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
 
-'''
-glimpse - Extract JIRA status to generate template report
-
-Prerequisites (ubuntu:16.04):
-
- * sudo apt -y install python3 python3-pip
- * sudo apt -y install python3-iso8601 python3-keyring
- * sudo pip3 install jira
-
-'''
+#
+# glimpse
+#
+# Extract JIRA status to generate template report
+#
 
 import argparse
-import collections
 import configparser
-import copy
 import datetime
 import getpass
-import hashlib
 from jira.client import JIRA
 import iso8601
 import os
@@ -25,13 +17,6 @@ import re
 import textwrap
 import subprocess
 import sys
-
-# Let's make the plotting tools optional (for those who only use glimpse
-# for their weekly report)
-try:
-	import matplotlib.pyplot as plt
-except:
-	pass
 
 # Import keyring, suppressing any warnings from gi when we do so
 try:
@@ -71,75 +56,6 @@ hacks = (
 	('wifi', 'WiFi'),
 )
 
-def add_percent_labels(labels, values):
-	total = sum(values)
-	return [ '{} ({:1.1f}%)'.format(l, 100 * (v / total)) for l, v in zip(labels, values) ]
-
-def get_colour(s):
-	override = {
-		'lava' : 'orange',
-		'LAVA' : 'orange',
-		'96boards' : 'red',
-		'96Boards' : 'red',
-		'Marvell' : 'green',
-		'Hisilicon' : 'pink',
-	}
-
-	if s in override:
-		return override[s]
-
-	return '#{}'.format(hashlib.md5(str(s).encode('UTF-8')).hexdigest()[-6:])
-
-def collect_by(things, categorize):
-	results = collections.defaultdict(list)
-	for t in things:
-		results[categorize(t)].append(t)
-	return results
-
-def collect_and_count_by(things, categorize, count=lambda t: 1):
-	results = collections.defaultdict(int)
-	for t in things:
-		results[categorize(t)] += count(t)
-	return results
-
-def stacked_bar_chart(things, filename, title=None, xlabel=None, ylabel=None):
-	x_labels = sorted(things.keys())
-
-	legend_labels = set()
-	for y in things.values():
-		legend_labels |= set(y.keys())
-	legend_labels = sorted(legend_labels)
-
-	plots = []
-	left = range(len(x_labels))
-
-	# Working in reverse order allows us to stack things so that the
-	# (alphabetic) legend is geometrically consistant with the stacks
-	# on the charts.
-	cumulative_height = [ 0 for x in x_labels ]
-	for y in sorted(legend_labels, reverse=True):
-		values = [ things[x][y] for x in x_labels ]
-		plots.append(plt.bar(left, values, 1,
-			bottom=cumulative_height, color=get_colour(y)))
-		cumulative_height = [ c+v for c, v in zip(cumulative_height,
-							  values) ]
-
-	# Now we must reverse plots in order to match it back up with the
-	# legend labels
-	plots.reverse()
-
-	if title:
-		plt.title(title)
-	if xlabel:
-		plt.xlabel(xlabel)
-	if ylabel:
-		plt.ylabel(ylabel)
-
-	plt.xticks([ x+0.5 for x in left ], x_labels, rotation=90)
-	lgd = plt.legend(plots, legend_labels, bbox_to_anchor=(1.05, 1), loc=2)
-	plt.savefig(filename, bbox_extra_artists=(lgd,), bbox_inches='tight')
-	plt.close()
-
 component_aliases = {
 	'Android-upstreaming' : 'Linaro'
 }
@@ -148,8 +64,14 @@ displayname_aliases = {
 	'Esla.Anzaku@linaro.org' : 'Elsa'
 }
 
+# When a card has more than one component we will remove these labels
+# *in order* until there is only one component to use as a sub-title.
+component_purge = (
+	'Engineering works', 'Linaro', 'BSP Analysis', 'Upstream Consultancy', 'Member Build', 'LAVA', 'Training', '96Boards'
+)
+
 component_categories = (
-	'BSP Analysis', 'Engineering works', 'Member Build', 'LAVA', 'Training', '96Boards', 'Upstream Consultancy', 'Metis', 'Linaro'
+	'BSP Analysis', 'Engineering works', 'Member Build', 'LAVA', 'Training', '96Boards', 'Upstream Consultancy', 'Linaro'
 )
 
 def warn(issue, msg):
@@ -191,7 +113,7 @@ class Issue(object):
 		self.url = 'https://projects.linaro.org/browse/' + issue.key
 
 		self._parse_worklog(jira)
-
+	
 	def _parse_worklog(self, jira):
 		self.worklog = []
 
@@ -248,41 +170,22 @@ class Issue(object):
 		warn(self, 'has bad status ({})'.format(self.fields.status.name))
 		return set()
 
-	def _get_date(self, date):
-		if not date:
-			return None
-
-		return iso8601.parse_date(date)
-
-	def created(self):
-		return iso8601.parse_date(self._raw.fields.created)
-
-	def resolved(self):
-		d = self._raw.fields.resolutiondate
-		if not d:
-			return None
-		return iso8601.parse_date(d)
-
 	def get_component(self):
 		components = []
-		if not self.key.startswith('PSE-'):
-			components += ('Linaro', 'Engineering works')
 		for c in self._raw.fields.components:
 			name = c.name
 			if name in component_aliases:
 				name = component_aliases[name]
 			components.append(name)
 		for p in component_categories:
-			if p in components and p != "Linaro":
+			if p in components:
 				return p
 
 		warn(self, 'does not match the component categories')
-		return self.key
+		return ''
 
 	def get_member(self):
 		components = []
-		if not self.key.startswith('PSE-'):
-			components += ('Linaro', 'Engineering works')
 		for c in self._raw.fields.components:
 			name = c.name
 			if name in component_aliases:
@@ -301,7 +204,7 @@ class Issue(object):
 					'(incomplete category list?)')
 		else:
 			return components[0]
-		return self.key
+		return ''
 
 	def get_assignees(self):
 		msg = ""
@@ -361,9 +264,9 @@ class Report(object):
 		issue = Issue(raw, self.jira)
 		self.issues[issue.key] = issue
 
-		if (issue.is_story() or issue.is_subtask()):
+		if (issue.is_story() or issue.is_subtask()) and issue.key.startswith('PSE-'):
 			self.blueprints[issue.key] = issue
-		elif issue.is_epic():
+		elif issue.is_epic() or (not issue.key.startswith('PSE-')):
 			self.cards[issue.key] = issue
 
 			components = []
@@ -373,16 +276,30 @@ class Report(object):
 					name = component_aliases[name]
 				components.append(name)
 
-			name = issue.get_member()
-			if name not in self.members:
-				self.members[name] = []
-			self.members[name].append(issue)
+			# Anything from an "alien" JIRA project is implicitly a Linaro task
+			if not issue.key.startswith('PSE-'):
+				components.append('Linaro')
 
+			for p in component_purge:
+				if len(components) < 2:
+					break
+				if p in components:
+					components.remove(p)
+
+			if len(components) == 0:
+				warn(issue, 'has no component')
+			elif len(components) >= 2:
+				warn(issue, 'has too many components '+
+						'(incomplete purge list?)')
+			for name in components:
+				if name not in self.members:
+					self.members[name] = []
+				self.members[name].append(issue)
 			issue.blueprints = []
 		else:
 			warn(issue, 'has unexpected issuetype {}'.format(
 				issue.fields.issuetype.name))
-
+	
 	def link_blueprints(self):
 		'''Iterate over the blueprints and link them to their cards.'''
 		for b in self.blueprints.values():
@@ -395,11 +312,11 @@ class Report(object):
 				if b.parent not in self.cards:
 					warn(b, 'is linked to non-existant {}'.format(b.parent))
 					continue
-
+	
 			card = self.cards[b.parent]
 			card.assignees |= b.assignees
 			card.blueprints.append(b)
-
+	
 	@staticmethod
 	def print(msg, level=0):
 		print('\n'.join(Report.wrappers[level].wrap(msg)))
@@ -465,7 +382,7 @@ def parse_date(s, end_of_day=False):
 	#date = date.rstrip()
 	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
 	today = datetime.date.today()
-	lmon = today - datetime.timedelta(days=today.weekday(), weeks=1)
+	lmon = today - datetime.timedelta(days=today.weekday(), weeks=2)
 	date = str(lmon)
 	print("Report starting from", date)
 	date = datetime.datetime.strptime(date, "%Y-%m-%d")
@@ -488,7 +405,7 @@ def parse_date2(s, end_of_day=False):
 	'''
 	#vvc
 	today = datetime.date.today()
-	lsun = today - datetime.timedelta(days=today.weekday()) + datetime.timedelta(days=-1)
+	lsun = today - datetime.timedelta(days=today.weekday()) + datetime.timedelta(days=-8)
 	date = str(lsun)
 	print("Report ending at", date)
 	date = datetime.datetime.strptime(date, "%Y-%m-%d")
@@ -563,44 +480,25 @@ def do_monthly(args):
 		print('<tr><td>{}</td>'.format(member))
 		print('<td><ul>')
 		for card in sorted(report.members[member], key=lambda x: x.key):
-			if not args.fully_automatic:
-				print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
-					card.summary, card.url, card.key))
-				just_in_time = True
-			else:
-				just_in_time = False
+			print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+				card.summary, card.url, card.key))
 			for log in card.get_worklog(
 					jira, age=(args.since, args.until),
 					recurse=True):
 				for bullet in log.progress:
-					if not just_in_time:
-						print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
-							card.summary, card.url, card.key))
-					just_in_time = True
-
 					print('<li>{}</li>'.format(bullet))
-			if just_in_time:
-				print('</ul></li>')
+			print('</ul></li>')
 		print('</ul></td>')
 		print('<td><ul>')
 		for card in sorted(report.members[member], key=lambda x: x.key):
-			if not args.fully_automatic:
-				print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
-					card.summary, card.url, card.key))
-				just_in_time = True
-			else:
-				just_in_time = False
+			print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+				card.summary, card.url, card.key))
 			for log in card.get_worklog(
 					jira, age=(args.since, args.until),
 					recurse=True):
 				for bullet in log.plans:
-					if not just_in_time:
-						print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
-							card.summary, card.url, card.key))
-						just_in_time = True
 					print('<li>{}</li>'.format(bullet))
-			if just_in_time:
-				print('</ul></li>')
+			print('</ul></li>')
 		print('</ul></td>')
 		print('</tr>')
 	print ('''\
@@ -611,170 +509,6 @@ def do_monthly(args):
 def do_passwd(args):
 	cfg = get_config()['jira']
 	keyring.set_password(cfg['server'], cfg['username'], getpass.getpass())
-
-def do_piechart(args):
-	full_year_since = args.until.replace(year=args.until.year - 1) + datetime.timedelta(minutes=1)
-
-	since = args.since.strftime("%Y-%m-%d")
-	until = args.until.strftime("%Y-%m-%d")
-	fys = full_year_since.strftime("%Y-%m-%d")
-
-	query = 'project = "Premium Services Engineering"'
-	query += ' AND (statusCategory != Complete OR updatedDate >= "{}")'.format(
-			full_year_since.strftime("%Y/%m/%d %H:%M"))
-	query += args.constraint
-
-	jira = connect_to_jira()
-	report = Report(jira, jira.search_issues(query))
-
-	def summarize(categorize_with, age):
-		data = {}
-
-		for card in report.cards.values():
-			logs = card.get_worklog(jira, recurse=True, age=age)
-			# track effort in hours...
-			effort = sum(l.timeSpentSeconds for l in logs) / (60 * 60)
-
-			if effort < 0.05:
-				continue
-
-			c = str(categorize_with(card))
-			if c not in data:
-				data[c] = { 'count':0, 'effort':0.0, 'cards':[] }
-
-			data[c]['effort'] += effort
-			data[c]['count'] += 1
-			# Tracking card id is good for debugging!
-			data[c]['cards'].append(card.key)
-
-		return data
-
-	def plot(title, fname, data, field):
-		labels = [ d for d in sorted(data.keys()) ]
-		counts = [ data[d][field] for d in labels ]
-		colours = [ get_colour(m) for m in labels ]
-
-		patches, texts = plt.pie(counts, colors=colours, startangle=90)
-		plt.legend(patches, add_percent_labels(labels, counts), loc="best")
-		plt.axis('equal')
-		plt.suptitle(title, fontsize=14)
-		plt.tight_layout()
-		plt.savefig(fname)
-		plt.close()
-
-	by_member = summarize(Issue.get_member, age=(args.since, args.until))
-	plot('PSE card summary per member ({} to {})'.format(since, until),
-	     'cards_per_member.png', by_member, 'count')
-	plot('PSE effort summary per member ({} to {})'.format(since, until),
-	     'effort_per_member.png', by_member, 'effort')
-
-	by_member = summarize(Issue.get_member, age=(full_year_since, args.until))
-	plot('PSE card summary per member ({} to {})'.format(fys, until),
-	     'cards_per_member-full_year.png', by_member, 'count')
-	plot('PSE effort summary per member ({} to {})'.format(fys, until),
-	     'effort_per_member-full_year.png', by_member, 'effort')
-
-	by_component = summarize(Issue.get_component, age=(args.since, args.until))
-	plot('PSE effort summary by category ({} to {})'.format(since, until),
-	     'effort_by_category.png', by_component, 'effort')
-
-	by_component = summarize(Issue.get_component, age=(full_year_since, args.until))
-	plot('PSE effort summary by category ({} to {})'.format(fys, until),
-	     'effort_by_category-full_year.png'.format(full_year_since.year), by_component, 'effort')
-
-	by_worklog = []
-	for c in report.cards.values():
-		worklog = c.get_worklog(jira, recurse=True, age=(full_year_since, args.until))
-		worklog = [ { 'raw': w } for w in worklog ]
-		for w in worklog:
-			l = w['raw']
-			w['date'] = iso8601.parse_date(l.started)
-			w['effort'] = l.timeSpentSeconds / (60 * 60)
-			w['epic'] = c.key
-		by_worklog += worklog
-
-	### Effort, by month and by member
-
-	by_month_by_member = collect_by(by_worklog, lambda w: w['date'].strftime('%Y-%m'))
-	for month in by_month_by_member.keys():
-		by_month_by_member[month] = collect_and_count_by(
-				by_month_by_member[month],
-				lambda l: report.cards[l['epic']].get_member(),
-				lambda l: l['effort'])
-	stacked_bar_chart(by_month_by_member, 'effort_by_month_and_member.png',
-			title = 'Effort by month and member',
-			ylabel = 'Effort (man-hours)')
-
-	### Effort, by month and by category
-
-	by_month_by_cat = collect_by(by_worklog, lambda w: w['date'].strftime('%Y-%m'))
-	for month in by_month_by_cat.keys():
-		by_month_by_cat[month] = collect_and_count_by(
-				by_month_by_cat[month],
-				lambda l: report.cards[l['epic']].get_component(),
-				lambda l: l['effort'])
-	stacked_bar_chart(by_month_by_cat, 'effort_by_month_and_category.png',
-			title = 'Effort by month and category',
-			ylabel = 'Effort (man-hours)')
-
-        ## Effort, by month and by developer
-
-
-	### Total count of cards
-
-	all_cards = report.cards.copy()
-	all_cards.update(report.blueprints)
-	open_cards = [ c for c in all_cards.values() if c.resolved() != None ]
-
-	by_month = {}
-	d = full_year_since
-	while d < args.until:
-		by_month['{:04d}-{:02d}'.format(d.year, d.month)] = []
-		d = d.replace(month=d.month + 1) if d.month < 12 else d.replace(d.year + 1, 1)
-
-	created_by_month = copy.deepcopy(by_month)
-	for c in all_cards.values():
-		d = c.created()
-		if d < full_year_since or d > args.until:
-			continue
-		created_by_month['{:04d}-{:02d}'.format(d.year, d.month)].append(c.key)
-
-	resolved_by_month = copy.deepcopy(by_month)
-	for c in all_cards.values():
-		d = c.resolved()
-		if d == None or d < full_year_since or d > args.until:
-			continue
-		resolved_by_month['{:04d}-{:02d}'.format(d.year, d.month)].append(c.key)
-
-	labels = sorted(by_month.keys())
-	created_bys = [ len(created_by_month[l]) for l in labels ]
-	resolved_bys = [ len(resolved_by_month[l]) for l in labels ]
-
-	backwards = [ b for b in zip(created_bys, resolved_bys) ]
-	backwards.reverse()
-	count = len(open_cards)
-	num_open = []
-	for c, r in backwards:
-		num_open.insert(0, count)
-		count += r - c
-
-	fig, ax = plt.subplots()
-	bar_width = 0.25
-	index = [x+bar_width for x in range(len(labels))]
-	opacity = 0.4
-
-	plt.plot([x+bar_width for x in index], num_open, color='b', linestyle='--', marker='o', label='Work to be completed')
-	rects1 = plt.bar(index, created_bys, bar_width,alpha=opacity, color='b',label='New work')
-	rects2 = plt.bar([x+bar_width for x in index], resolved_bys, bar_width,alpha=opacity,color='r',label='Completed work')
-
-	#plt.xlabel('Time')
-	plt.ylabel('Issues (epics & stories)')
-	plt.title('Work items tracked per-month')
-	plt.grid(zorder=0)
-	plt.xticks([x+bar_width for x in index], labels, rotation=90)
-	lgd = plt.legend(bbox_to_anchor=(1.05, 1), loc=2)
-	plt.savefig('card_tracker.png', bbox_extra_artists=(lgd,), bbox_inches='tight')
-	plt.close()
 
 def do_worklog(args):
 	query = 'project = "Premium Services Engineering"'
@@ -801,8 +535,7 @@ def do_worklog(args):
 
 def main(argv):
 	parser = argparse.ArgumentParser()
-	subparsers = parser.add_subparsers(dest='sub-command')
-	subparsers.required = True	# Can't be set using named arguments (yet)
+	subparsers = parser.add_subparsers()
 
 	# create the parser for the "weekly" command
 	s = subparsers.add_parser("weekly",
@@ -826,26 +559,13 @@ def main(argv):
 			help="When to stop gathering information")
 	s.add_argument("constraint", nargs="*",
 			help="Any additional JQL contraints")
-	s.add_argument("--fully-automatic", action="store_true")
 	s.set_defaults(func=do_monthly)
+
 
 	# create the parser for the "passwd" command
 	s = subparsers.add_parser("passwd",
 			help="Store your JIRA password on the keyring")
 	s.set_defaults(func=do_passwd)
-
-	# create the parser for the "piechart" command
-	s = subparsers.add_parser("piechart",
-			help="Generate piecharts for reporting")
-	s.add_argument("--since", default="last month -{} days 00:00:00".format(
-					datetime.date.today().day - 1),
-			help="When to gather information from")
-	s.add_argument("--until", default="-{} days 23:59:59".format(
-					datetime.date.today().day),
-			help="When to stop gathering information")
-	s.add_argument("constraint", nargs="*",
-			help="Any additional JQL contraints")
-	s.set_defaults(func=do_piechart)
 
 	# create the parser for the "worklog" command
 	s = subparsers.add_parser("worklog",
@@ -870,10 +590,9 @@ def main(argv):
 
 	args.func(args)
 
-if __name__ == '__main__':
-	try:
-		sys.exit(main(sys.argv))
-	except KeyboardInterrupt:
-		sys.exit(1)
-	sys.exit(127)
+try:
+	sys.exit(main(sys.argv))
+except KeyboardInterrupt:
+	sys.exit(1)
+sys.exit(127)
 

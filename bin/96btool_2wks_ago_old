@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+
+'''
+96btool - Tool to study a users forum posts
+
+Reminders of interesting threads for a weekly report:
+
+    96btool fetch --since 'next-friday -13 days' --nick vchong | \
+    96btool filter --until 'next-friday -1 week' | \
+    96btool weekly
+
+Create list of links in case the reminders are not enough:
+
+    96btool fetch --since 'next-friday -13 days' --nick vchong | \
+    96btool fter --until 'next-friday -1 week' | \
+    96btool format --template '{uri}' | cut -f1 -d'#' | sort -u
+
+
+If you want to develop the tool itself to pull additional information from
+the HTML you may need to experiment interactively with "real" HTML objects.
+Try:
+
+import requests
+from lxml import html
+page = requests.get('http://www.96boards.org/members/vchong/forums/replies')
+tree = html.fromstring(page.content)
+content = tree.xpath('//div[@class="bbp-reply-content"]')
+
+'''
+
+import argparse
+import datetime
+import iso8601
+import json
+import re
+import requests
+import requests_cache
+import subprocess
+import sys
+import os
+import textwrap
+from lxml import html
+from lxml import etree
+
+# Enable caching throughout
+requests_cache.install_cache()
+
+def parse_date(s, end_of_day=False):
+	'''Convert a string to a datetime object.
+
+	Operates by calling out to date (because it has a good relative date
+	parser).
+
+	'''
+	#vvc
+	#date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
+	#date = str(date, 'utf-8')
+	#date = date.rstrip()
+	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	today = datetime.date.today()
+	lmon = today - datetime.timedelta(days=today.weekday(), weeks=2)
+	date = str(lmon)
+	#Do NOT print! Else u'll break da 'weekly' parsing
+	#print("Report starting from", date)
+	date = datetime.datetime.strptime(date, "%Y-%m-%d")
+
+	# TODO: We might jump about a few hours here (date has not been
+	#       told to give back values in UTC)
+	date = date.replace(tzinfo=iso8601.UTC)
+
+	if end_of_day and date.hour == 0 and date.minute == 0 and date.second == 0:
+		date += datetime.timedelta(hours=23, minutes=59, seconds=59)
+
+	return date.replace(tzinfo=iso8601.UTC)
+
+def parse_date2(s, end_of_day=False):
+	'''Convert a string to a datetime object.
+
+	Operates by calling out to date (because it has a good relative date
+	parser).
+
+	'''
+	#vvc
+	#date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
+	#date = str(date, 'utf-8')
+	#date = date.rstrip()
+	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	today = datetime.date.today()
+	lsun = today - datetime.timedelta(days=today.weekday()) + datetime.timedelta(days=-8)
+	date = str(lsun)
+	#Do NOT print! Else u'll break da 'weekly' parsing
+	#print("Report ending at ", date)
+	date = datetime.datetime.strptime(date, "%Y-%m-%d")
+
+	# TODO: We might jump about a few hours here (date has not been
+	#       told to give back values in UTC)
+	date = date.replace(tzinfo=iso8601.UTC)
+
+	if end_of_day and date.hour == 0 and date.minute == 0 and date.second == 0:
+		date += datetime.timedelta(hours=23, minutes=59, seconds=59)
+
+	return date.replace(tzinfo=iso8601.UTC)
+
+def get_replies(made_by, pageno=1):
+	#print('get_replies({}, {})'.format(made_by, pageno), file=sys.stderr)
+	with requests_cache.disabled():
+		page = requests.get('http://www.96boards.org/members/{}/forums/replies/page/{}/'.format(made_by, pageno))
+	if not page.ok:
+		return None
+	tree = html.fromstring(page.content)
+
+	authors = tree.xpath('//a[@class="bbp-author-name"]/text()')
+
+	contents = tree.xpath('//div[@class="bbp-reply-content"]')
+	contents = [ str(etree.tostring(c), 'utf-8') for c in contents ]
+
+	dates = tree.xpath('//span[@class="bbp-reply-post-date"]/text()')
+	dates = [ datetime.datetime.strptime(d,
+			'%B %d, %Y at %I:%M %p').replace(tzinfo=iso8601.UTC)
+			for d in dates ]
+
+	links = tree.xpath('//a[@class="bbp-reply-permalink"]')
+	links = [ l.get('href') for l in links ]
+
+	titles = [ get_title(uri) for uri in links ]
+
+	posts = [ { 'author': a, 'date': d, 'subject': t, 'uri': l, 'content': c }
+			for (a, d, t, l, c) in zip(authors, dates, titles, links, contents)]
+
+	return posts
+
+def get_title(uri):
+	#print('get_title({})'.format(uri), file=sys.stderr)
+
+	page = requests.get(uri)
+	tree = html.fromstring(page.content)
+	titles = tree.xpath('//meta[@property="og:title"]')
+
+	# There may be more than one title. At present these differ only in
+	# that some are post-fixed by the name of the blog. For that reason
+	# we grab the common prefix (os.path.commonprefix does not require
+	# that it be used on a path).
+	return os.path.commonprefix([ t.get('content') for t in titles ])
+
+def do_count(args):
+	print(len(json.loads(sys.stdin.read())))
+
+def do_fetch(args):
+	since = parse_date(args.since)
+	#Do NOT print! Else u'll break da 'weekly' parsing
+	#print("do_fetch since = ", since)
+
+	posts = get_replies(args.nick)
+
+	# Fetch more pages until we reach the target date
+	pageno = 2
+	while posts[-1]['date'] > since:
+		more = get_replies(args.nick, pageno)
+		if not more:
+			break
+		posts += more
+		pageno += 1
+
+	# Filter out any posts that are too old
+	posts = [ p for p in posts if p['date'] > since ]
+
+	# Sort by date (the output of the blog tool is almost, but not quite,
+	# in reverse date order)
+	posts = sorted(posts, key=lambda k: k['date'])
+
+	for p in posts:
+		p['date'] = p['date'].isoformat()
+		p['id'] = p['uri'].split('-')[-1]
+		p['nick'] = args.nick
+		f = html.fragment_fromstring(p['content'])
+		p['text'] = f.text_content().strip()
+		p['wordcount'] = len(p['text'].split())
+
+	json.dump(posts, sys.stdout)
+
+def do_format(args):
+	for p in json.loads(sys.stdin.read()):
+		ln = args.template
+		for m in re.finditer('{([^}:]+)([^}]*)}', args.template):
+			field = m.group(1)
+			fmt = m.group(2)
+
+			try:
+				if 'shortdate' == field:
+					val = p['date'][:10]
+				elif '-' in field:
+					(field, attr) = field.split('-', 1)
+					val = p[field][attr]
+				else:
+					val = p[field]
+			except KeyError:
+				continue
+
+			ln = ln.replace(m.group(0), '{{{}}}'.format(fmt).format(val))
+		print(ln)
+
+def do_merge(args):
+	decoder = json.JSONDecoder()
+
+	s = sys.stdin.read()
+
+	posts = []
+
+	while s:
+		(p, i) = decoder.raw_decode(s)
+		posts += p
+		s = s[i:]
+
+	# Sort by date (iso8601 strings can be directly compared)
+	posts = sorted(posts, key=lambda k: k['date'])
+
+	json.dump(posts, sys.stdout)
+
+def do_filter(args):
+	since = parse_date(args.since)
+	until = parse_date2(args.until)
+	#Do NOT print! Else u'll break da 'weekly' parsing
+	#print("do_filter since = ", since, " until = ", until)
+
+	posts = json.loads(sys.stdin.read())
+
+	posts = [ p for p in posts if iso8601.parse_date(p['date']) >= since ]
+	posts = [ p for p in posts if iso8601.parse_date(p['date']) < until ]
+
+	json.dump(posts, sys.stdout)
+
+def do_weekly(args):
+	wrappers = (
+		textwrap.TextWrapper(),
+		textwrap.TextWrapper(initial_indent=' * ', subsequent_indent='   '),
+		textwrap.TextWrapper(initial_indent='   - ', subsequent_indent='     ')
+	)
+
+	def wrap(msg, level=1):
+		print('\n'.join(wrappers[level].wrap(msg)))
+
+	wrap("96Boards forum activity", level=1)
+
+	summary = {}
+	for p in json.loads(sys.stdin.read()):
+		if p['subject'] not in summary:
+			summary[p['subject']] = 1
+		else:
+			summary[p['subject']] += 1
+
+	for s in sorted(summary.keys()):
+		if summary[s] == 1:
+			wrap(s, level=2)
+		else:
+			wrap('{} ({} posts)'.format(s, summary[s]), level=2)
+
+def main(argv):
+	parser = argparse.ArgumentParser()
+	subparsers = parser.add_subparsers()
+
+	s = subparsers.add_parser('count')
+	s.set_defaults(func=do_count)
+
+	s = subparsers.add_parser('fetch')
+	s.add_argument("--nick", default="vchong",
+		        help="Nickname to fetch replies from");
+	s.add_argument("--since", default="next-friday -11 days",
+			help="When to gather information from")
+	s.set_defaults(func=do_fetch)
+
+	s = subparsers.add_parser('format')
+	s.add_argument("--template",
+			default="{id}: {subject} ({nick})")
+	s.set_defaults(func=do_format)
+
+	s = subparsers.add_parser('merge')
+	s.set_defaults(func=do_merge)
+
+	s = subparsers.add_parser('filter')
+	s.add_argument("--since", default="next-friday -11 days",
+			help="When to gather information from")
+	s.add_argument("--until", default="next-friday -5 days",
+			help="When to stop gathering information")
+	s.set_defaults(func=do_filter)
+
+	s = subparsers.add_parser('summary')
+	s.set_defaults(func=do_format,
+		       template="{shortdate}: {subject} ({nick})")
+
+	s = subparsers.add_parser('weekly')
+	s.set_defaults(func=do_weekly)
+
+	args = parser.parse_args(argv[1:])
+	args.func(args)
+
+if __name__ == "__main__":
+	try:
+		sys.exit(main(sys.argv))
+	except KeyboardInterrupt:
+		sys.exit(1)
+	sys.exit(127)
+
