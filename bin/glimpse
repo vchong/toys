@@ -78,7 +78,7 @@ def warn(issue, msg):
 	lines = textwrap.wrap('{} {}'.format(issue.url, msg),
 			initial_indent=   'WARNING: ',
 			subsequent_indent='         ')
-	print('\n'.join(lines), file=sys.stderr)
+	print('\n'.join(lines))
 
 class Issue(object):
 	re_ymd = re.compile('(20[0-9][0-9]).?([0-9][0-9]).?([0-9][0-9])')
@@ -264,9 +264,9 @@ class Report(object):
 		issue = Issue(raw, self.jira)
 		self.issues[issue.key] = issue
 
-		if issue.is_story() or issue.is_subtask():
+		if (issue.is_story() or issue.is_subtask()) and issue.key.startswith('PSE-'):
 			self.blueprints[issue.key] = issue
-		elif issue.is_epic():
+		elif issue.is_epic() or (not issue.key.startswith('PSE-')):
 			self.cards[issue.key] = issue
 
 			components = []
@@ -338,7 +338,7 @@ def get_config():
 	if 'server' not in cfg['jira']:
 		cfg['jira']['server'] = 'https://projects.linaro.org'
 	if 'username' not in cfg['jira']:
-		cfg['jira']['username'] = 'daniel.thompson@linaro.org'
+		cfg['jira']['username'] = 'victor.chong@linaro.org'
 
 	if orig != cfg['jira']:
 		with open(filename, 'w') as f:
@@ -376,10 +376,39 @@ def parse_date(s, end_of_day=False):
 	parser).
 
 	'''
-	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
-	date = str(date, 'utf-8')
-	date = date.rstrip()
-	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	#vvc
+	#date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
+	#date = str(date, 'utf-8')
+	#date = date.rstrip()
+	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	today = datetime.date.today()
+	lmon = today - datetime.timedelta(days=today.weekday(), weeks=1)
+	date = str(lmon)
+	print("Report starting from", date)
+	date = datetime.datetime.strptime(date, "%Y-%m-%d")
+
+	# TODO: We might jump about a few hours here (date has not been
+	#       told to give back values in UTC
+	date = date.replace(tzinfo=utc)
+
+	if end_of_day and date.hour == 0 and date.minute == 0 and date.second == 0:
+		date += datetime.timedelta(hours=23, minutes=59, seconds=59)
+
+	return date.replace(tzinfo=utc)
+
+def parse_date2(s, end_of_day=False):
+	'''Convert a string to a datetime object.
+
+	Operates by calling out to date (because it has a good relative date
+	parser).
+
+	'''
+	#vvc
+	today = datetime.date.today()
+	lsun = today - datetime.timedelta(days=today.weekday()) + datetime.timedelta(days=-1)
+	date = str(lsun)
+	print("Report ending at", date)
+	date = datetime.datetime.strptime(date, "%Y-%m-%d")
 
 	# TODO: We might jump about a few hours here (date has not been
 	#       told to give back values in UTC
@@ -511,9 +540,9 @@ def main(argv):
 	# create the parser for the "weekly" command
 	s = subparsers.add_parser("weekly",
 			help="Generate a (template) weekly report")
-	s.add_argument("--since", default="next-friday -1 weeks -4 days",
+	s.add_argument("--since", default="next-friday -11 days",
 			help="When to gather information from")
-	s.add_argument("--until", default="tomorrow",
+	s.add_argument("--until", default="next-friday -5 days",
 			help="When to stop gathering information")
 	s.add_argument("constraint", nargs="*",
 			help="Any additional JQL contraints")
@@ -557,7 +586,7 @@ def main(argv):
 	if 'since' in args:
 		args.since = parse_date(args.since)
 	if 'until' in args:
-		args.until = parse_date(args.until, end_of_day=True)
+		args.until = parse_date2(args.until, end_of_day=True)
 
 	args.func(args)
 

@@ -11,7 +11,7 @@ if you leave your report until mid-way through the following week):
 
     ldtstool fetch --since 'next-friday -13 days' \
 		    --until 'next-friday -1 week' | \
-    ldtstool filter --assignee daniel.thompson@linaro.org | \
+    ldtstool filter --assignee victor.chongn@linaro.org | \
     ldtstool weekly
 
 Producing a customized HTML report (by dynamically generating markdown):
@@ -56,7 +56,7 @@ import keyring
 try:
 	import zdesk
 except:
-	print("zdesk module not found - no online support", file=sys.stderr)
+	print("zdesk module not found - no online support")
 
 class UTC(datetime.tzinfo):
 	ZERO = datetime.timedelta(0)
@@ -89,7 +89,7 @@ def get_config():
 	if 'server' not in cfg['zendesk']:
 		cfg['zendesk']['server'] = 'https://linaro.zendesk.com'
 	if 'username' not in cfg['zendesk']:
-		cfg['zendesk']['username'] = 'daniel.thompson@linaro.org'
+		cfg['zendesk']['username'] = 'victor.chong@linaro.org'
 
 	if orig != cfg['zendesk']:
 		with open(filename, 'w') as f:
@@ -107,10 +107,45 @@ def parse_date(s, end_of_day=False):
 	parser).
 
 	'''
-	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
-	date = str(date, 'utf-8')
-	date = date.rstrip()
-	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	#vvc
+	#date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
+	#date = str(date, 'utf-8')
+	#date = date.rstrip()
+	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	today = datetime.date.today()
+	lmon = today - datetime.timedelta(days=today.weekday(), weeks=1)
+	date = str(lmon)
+	#Do NOT print! Else u'll break da 'weekly' parsing
+	#print("Report starting from", date)
+	date = datetime.datetime.strptime(date, "%Y-%m-%d")
+
+	# TODO: We might jump about a few hours here (date has not been
+	#       told to give back values in UTC)
+	date = date.replace(tzinfo=utc)
+
+	if end_of_day and date.hour == 0 and date.minute == 0 and date.second == 0:
+		date += datetime.timedelta(hours=23, minutes=59, seconds=59)
+
+	return date.replace(tzinfo=utc)
+
+def parse_date2(s, end_of_day=False):
+	'''Convert a string to a datetime object.
+
+	Operates by calling out to date (because it has a good relative date
+	parser).
+
+	'''
+	#vvc
+	#date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
+	#date = str(date, 'utf-8')
+	#date = date.rstrip()
+	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	today = datetime.date.today()
+	lsun = today - datetime.timedelta(days=today.weekday()) + datetime.timedelta(days=-1) 
+	date = str(lsun)
+	#Do NOT print! Else u'll break da 'weekly' parsing
+	#print("Report ending at", date)
+	date = datetime.datetime.strptime(date, "%Y-%m-%d")
 
 	# TODO: We might jump about a few hours here (date has not been
 	#       told to give back values in UTC)
@@ -224,7 +259,7 @@ class Ticket(dict):
 		password = keyring.get_password(cfg['server'], cfg['username'])
 		zd = zdesk.Zendesk(cfg['server'], cfg['username'], password)
 
-		tickets = [ Ticket(t) for t in zd.tickets_list(get_all_pages=True)['tickets'] ] 
+		tickets = [ Ticket(t) for t in zd.tickets_list(get_all_pages=True)['tickets'] ]
 
 		# Filter by date as early as possible so we can reduce network round trips
 		tickets = [ t for t in tickets if t.is_within_date(since, until) ]
@@ -261,7 +296,7 @@ def do_count(args):
 			count[x] = 1
 		else:
 			count[x] += 1
-	
+
 	def show_count():
 		if args.csv:
 			for k in sorted(count.keys()):
@@ -287,7 +322,7 @@ def do_count(args):
 	if args.by_category:
 		hacks = {
 			'android_lmg': 'android',
-			'board_support': 'board', 
+			'board_support': 'board',
 			'home_lhg': 'home',
 			'kernel_kwg': 'kernel',
 			'linaro_lsk': 'kernel',
@@ -344,7 +379,9 @@ def do_days(args):
 
 def do_fetch(args):
 	since = parse_date(args.since)
-	until = parse_date(args.until)
+	until = parse_date2(args.until)
+	#Do NOT print! Else u'll break da 'weekly' parsing
+	#print("do_fetch since = ", since, " until = ", until)
 
 	tickets = Ticket.fetch(since, until)
 
@@ -352,14 +389,16 @@ def do_fetch(args):
 
 def do_filter(args):
 	since = parse_date(args.since)
-	until = parse_date(args.until)
+	until = parse_date2(args.until)
+	#Do NOT print! Else u'll break da 'weekly' parsing
+	#print("do_filter since = ", since, " until = ", until)
 
 	data = Ticket.loads(sys.stdin.read())
 
 	data = [ t for t in data if t.is_within_date(since, until) ]
 
 	if args.assignee:
-		data = [t for t in data 
+		data = [t for t in data
 			if args.assignee in t.assignee('name') or \
 			   args.assignee in t.assignee('email')]
 	if args.community:
@@ -406,7 +445,7 @@ def do_tags(args):
 	tags = set()
 	for t in tickets:
 		tags |= set(t['tags'])
-	
+
 	for t in sorted(tags):
 		print(t)
 
@@ -426,10 +465,10 @@ def do_weekly(args):
 		subject = t['subject']
 		assignee = t.assignee('name').split(' ', 1)[0]
 		ticket_num = t['id']
-		
-		headings.append('{}: {} [{}] (LDTS-{})'.format(organization, subject, 
+
+		headings.append('{}: {} [{}] (LDTS-{})'.format(organization, subject,
 				assignee, ticket_num))
-	
+
 	for h in sorted(headings):
 		wrap(h)
 
@@ -452,16 +491,16 @@ def main(argv):
 	s.set_defaults(func=do_days)
 
 	s = subparsers.add_parser('fetch')
-	s.add_argument("--since", default="2012-01-01",
+	s.add_argument("--since", default="next-friday -11 days",
 			help="When to gather information from")
-	s.add_argument("--until", default="tomorrow",
+	s.add_argument("--until", default="next-friday -5 days",
 			help="When to stop gathering information")
 	s.set_defaults(func=do_fetch)
 
 	s = subparsers.add_parser("filter")
-	s.add_argument("--since", default="2012-01-01",
+	s.add_argument("--since", default="next-friday -11 days",
 			help="When to gather information from")
-	s.add_argument("--until", default="tomorrow",
+	s.add_argument("--until", default="next-friday -5 days",
 			help="When to stop gathering information")
 	s.add_argument("--assignee")
 	s.add_argument("--community", action='store_true')

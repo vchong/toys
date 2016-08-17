@@ -5,13 +5,13 @@
 
 Reminders of interesting threads for a weekly report:
 
-    96btool fetch --since 'next-friday -13 days' --nick danielt | \
+    96btool fetch --since 'next-friday -13 days' --nick vchong | \
     96btool filter --until 'next-friday -1 week' | \
     96btool weekly
 
 Create list of links in case the reminders are not enough:
 
-    96btool fetch --since 'next-friday -13 days' --nick danielt | \
+    96btool fetch --since 'next-friday -13 days' --nick vchong | \
     96btool fter --until 'next-friday -1 week' | \
     96btool format --template '{uri}' | cut -f1 -d'#' | sort -u
 
@@ -22,7 +22,7 @@ Try:
 
 import requests
 from lxml import html
-page = requests.get('http://www.96boards.org/members/danielt/forums/replies')
+page = requests.get('http://www.96boards.org/members/vchong/forums/replies')
 tree = html.fromstring(page.content)
 content = tree.xpath('//div[@class="bbp-reply-content"]')
 
@@ -52,10 +52,45 @@ def parse_date(s, end_of_day=False):
 	parser).
 
 	'''
-	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
-	date = str(date, 'utf-8')
-	date = date.rstrip()
-	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	#vvc
+	#date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
+	#date = str(date, 'utf-8')
+	#date = date.rstrip()
+	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	today = datetime.date.today()
+	lmon = today - datetime.timedelta(days=today.weekday(), weeks=1)
+	date = str(lmon)
+	#Do NOT print! Else u'll break da 'weekly' parsing
+	#print("Report starting from", date)
+	date = datetime.datetime.strptime(date, "%Y-%m-%d")
+
+	# TODO: We might jump about a few hours here (date has not been
+	#       told to give back values in UTC)
+	date = date.replace(tzinfo=iso8601.UTC)
+
+	if end_of_day and date.hour == 0 and date.minute == 0 and date.second == 0:
+		date += datetime.timedelta(hours=23, minutes=59, seconds=59)
+
+	return date.replace(tzinfo=iso8601.UTC)
+
+def parse_date2(s, end_of_day=False):
+	'''Convert a string to a datetime object.
+
+	Operates by calling out to date (because it has a good relative date
+	parser).
+
+	'''
+	#vvc
+	#date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
+	#date = str(date, 'utf-8')
+	#date = date.rstrip()
+	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	today = datetime.date.today()
+	lsun = today - datetime.timedelta(days=today.weekday()) + datetime.timedelta(days=-1)
+	date = str(lsun)
+	#Do NOT print! Else u'll break da 'weekly' parsing
+	#print("Report ending at ", date)
+	date = datetime.datetime.strptime(date, "%Y-%m-%d")
 
 	# TODO: We might jump about a few hours here (date has not been
 	#       told to give back values in UTC)
@@ -112,6 +147,8 @@ def do_count(args):
 
 def do_fetch(args):
 	since = parse_date(args.since)
+	#Do NOT print! Else u'll break da 'weekly' parsing
+	#print("do_fetch since = ", since)
 
 	posts = get_replies(args.nick)
 
@@ -181,7 +218,9 @@ def do_merge(args):
 
 def do_filter(args):
 	since = parse_date(args.since)
-	until = parse_date(args.until)
+	until = parse_date2(args.until)
+	#Do NOT print! Else u'll break da 'weekly' parsing
+	#print("do_filter since = ", since, " until = ", until)
 
 	posts = json.loads(sys.stdin.read())
 
@@ -223,9 +262,9 @@ def main(argv):
 	s.set_defaults(func=do_count)
 
 	s = subparsers.add_parser('fetch')
-	s.add_argument("--nick", default="danielt",
+	s.add_argument("--nick", default="vchong",
 		        help="Nickname to fetch replies from");
-	s.add_argument("--since", default="2012-01-01",
+	s.add_argument("--since", default="next-friday -11 days",
 			help="When to gather information from")
 	s.set_defaults(func=do_fetch)
 
@@ -238,9 +277,9 @@ def main(argv):
 	s.set_defaults(func=do_merge)
 
 	s = subparsers.add_parser('filter')
-	s.add_argument("--since", default="2012-01-01",
+	s.add_argument("--since", default="next-friday -11 days",
 			help="When to gather information from")
-	s.add_argument("--until", default="tomorrow",
+	s.add_argument("--until", default="next-friday -5 days",
 			help="When to stop gathering information")
 	s.set_defaults(func=do_filter)
 
