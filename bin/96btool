@@ -4,6 +4,7 @@ import argparse
 import datetime
 import iso8601
 import json
+import re
 import requests
 import requests_cache
 import subprocess
@@ -100,6 +101,27 @@ def do_fetch(args):
 
 	json.dump(posts, sys.stdout)
 
+def do_format(args):
+	for p in json.loads(sys.stdin.read()):
+		ln = args.template
+		for m in re.finditer('{([^}:]+)([^}]*)}', args.template):
+			field = m.group(1)
+			fmt = m.group(2)
+
+			try:
+				if 'shortdate' == field:
+					val = p['date'][:10]
+				elif '-' in field:
+					(field, attr) = field.split('-', 1)
+					val = p[field][attr]
+				else:
+					val = p[field]
+			except KeyError:
+				continue
+
+			ln = ln.replace(m.group(0), '{{{}}}'.format(fmt).format(val))
+		print(ln)
+
 def do_merge(args):
 	decoder = json.JSONDecoder()
 
@@ -156,6 +178,11 @@ def main(argv):
 			help="When to gather information from")
 	s.set_defaults(func=do_fetch)
 
+	s = subparsers.add_parser('format')
+	s.add_argument("--template",
+			default="{id}: {subject} ({nick})")
+	s.set_defaults(func=do_format)
+
 	s = subparsers.add_parser('merge')
 	s.set_defaults(func=do_merge)
 
@@ -165,6 +192,10 @@ def main(argv):
 	s.add_argument("--until", default="tomorrow",
 			help="When to stop gathering information")
 	s.set_defaults(func=do_filter)
+
+	s = subparsers.add_parser('summary')
+	s.set_defaults(func=do_format,
+		       template="{shortdate}: {subject} ({nick})")
 
 	s = subparsers.add_parser('weekly')
 	s.set_defaults(func=do_weekly)
