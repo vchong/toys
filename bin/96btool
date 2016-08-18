@@ -100,6 +100,26 @@ def do_fetch(args):
 
 	json.dump(posts, sys.stdout)
 
+def do_merge(args):
+	decoder = json.JSONDecoder()
+
+	s = sys.stdin.read()
+
+	posts = []
+
+	while s:
+		(p, i) = decoder.raw_decode(s)
+		posts += p
+		s = s[i:]
+
+	# Sort by date (iso8601 strings can be directly compared)
+	posts = sorted(posts, key=lambda k: k['date'])
+
+	json.dump(posts, sys.stdout)
+
+
+	json.dump(posts, sys.stdout)
+
 def do_weekly(args):
 	wrappers = (
 		textwrap.TextWrapper(),
@@ -127,6 +147,9 @@ def main(argv):
 	s.add_argument("--since", default="2012-01-01",
 			help="When to gather information from")
 	s.set_defaults(func=do_fetch)
+
+	s = subparsers.add_parser('merge')
+	s.set_defaults(func=do_merge)
 
 	s = subparsers.add_parser('weekly')
 	s.set_defaults(func=do_weekly)
