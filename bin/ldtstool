@@ -332,8 +332,8 @@ def do_filter(args):
 	if args.member:
 		data = [ t for t in data if not t.is_community() ]
 	if args.tags:
-		data = [ t for t in data if t.is_tagged(args.tags) ]
-	
+		data = [ t for t in data if t.is_tagged(args.tags, args.strict) ]
+
 	json.dump(data, sys.stdout)
 
 def do_format(args):
@@ -429,6 +429,7 @@ def main(argv):
 	s.add_argument("--assignee")
 	s.add_argument("--community", action='store_true')
 	s.add_argument("--member", action='store_true')
+	s.add_argument("--strict", action='store_true')
 	s.add_argument("--tags")
 	s.set_defaults(func=do_filter)
 
