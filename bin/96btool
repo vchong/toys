@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
 
+'''
+96btool - Tool to study a users forum posts
+
+To experiment interactively with "real" HTML try:
+
+import requests
+from lxml import html
+page = requests.get('http://www.96boards.org/members/danielt/forums/replies')
+tree = html.fromstring(page.content)
+content = tree.xpath('//div[@class="bbp-reply-content"]')
+
+
+'''
+
 import argparse
 import datetime
 import iso8601
