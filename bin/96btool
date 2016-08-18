@@ -3,14 +3,28 @@
 '''
 96btool - Tool to study a users forum posts
 
-To experiment interactively with "real" HTML try:
+Reminders of interesting threads for a weekly report:
+
+    96btool fetch --since 'next-friday -13 days' --nick danielt | \
+    96btool filter --until 'next-friday -1 week' | \
+    96btool weekly
+
+Create list of links in case the reminders are not enough:
+
+    96btool fetch --since 'next-friday -13 days' --nick danielt | \
+    96btool fter --until 'next-friday -1 week' | \
+    96btool format --template '{uri}' | cut -f1 -d'#' | sort -u
+
+
+If you want to develop the tool itself to pull additional information from
+the HTML you may need to experiment interactively with "real" HTML objects.
+Try:
 
 import requests
 from lxml import html
 page = requests.get('http://www.96boards.org/members/danielt/forums/replies')
 tree = html.fromstring(page.content)
 content = tree.xpath('//div[@class="bbp-reply-content"]')
-
 
 '''
 
@@ -187,8 +201,19 @@ def do_weekly(args):
 		print('\n'.join(wrappers[level].wrap(msg)))
 
 	wrap("96Boards forum activity", level=1)
+
+	summary = {}
 	for p in json.loads(sys.stdin.read()):
-		wrap('{} (post-{})'.format(p['subject'], p['id']), level=2)
+		if p['subject'] not in summary:
+			summary[p['subject']] = 1
+		else:
+			summary[p['subject']] += 1
+
+	for s in sorted(summary.keys()):
+		if summary[s] == 1:
+			wrap(s, level=2)
+		else:
+			wrap('{} ({} posts)'.format(s, summary[s]), level=2)
 
 def main(argv):
 	parser = argparse.ArgumentParser()
