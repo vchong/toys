@@ -12,6 +12,7 @@ import sys
 import os
 import textwrap
 from lxml import html
+from lxml import etree
 
 # Enable caching throughout
 requests_cache.install_cache()
@@ -45,16 +46,23 @@ def get_replies(made_by, pageno=1):
 		return None
 	tree = html.fromstring(page.content)
 
+	authors = tree.xpath('//a[@class="bbp-author-name"]/text()')
+
+	contents = tree.xpath('//div[@class="bbp-reply-content"]')
+	contents = [ str(etree.tostring(c), 'utf-8') for c in contents ]
+
 	dates = tree.xpath('//span[@class="bbp-reply-post-date"]/text()')
+	dates = [ datetime.datetime.strptime(d,
+			'%B %d, %Y at %I:%M %p').replace(tzinfo=iso8601.UTC)
+			for d in dates ]
+
 	links = tree.xpath('//a[@class="bbp-reply-permalink"]')
 	links = [ l.get('href') for l in links ]
 
-	dates = [ datetime.datetime.strptime(d, 
-			'%B %d, %Y at %I:%M %p').replace(tzinfo=iso8601.UTC)
-			for d in dates ]
 	titles = [ get_title(uri) for uri in links ]
-	posts = [ { 'date': d, 'subject': t, 'uri': l }
-			for (d, t, l) in zip(dates, titles, links)]
+
+	posts = [ { 'author': a, 'date': d, 'subject': t, 'uri': l, 'content': c }
+			for (a, d, t, l, c) in zip(authors, dates, titles, links, contents)]
 
 	return posts
 
@@ -98,6 +106,10 @@ def do_fetch(args):
 	for p in posts:
 		p['date'] = p['date'].isoformat()
 		p['id'] = p['uri'].split('-')[-1]
+		p['nick'] = args.nick
+		f = html.fragment_fromstring(p['content'])
+		p['text'] = f.text_content().strip()
+		p['wordcount'] = len(p['text'].split())
 
 	json.dump(posts, sys.stdout)
 
