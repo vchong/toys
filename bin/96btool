@@ -117,6 +117,14 @@ def do_merge(args):
 
 	json.dump(posts, sys.stdout)
 
+def do_filter(args):
+	since = parse_date(args.since)
+	until = parse_date(args.until)
+
+	posts = json.loads(sys.stdin.read())
+
+	posts = [ p for p in posts if iso8601.parse_date(p['date']) >= since ]
+	posts = [ p for p in posts if iso8601.parse_date(p['date']) < until ]
 
 	json.dump(posts, sys.stdout)
 
@@ -150,6 +158,13 @@ def main(argv):
 
 	s = subparsers.add_parser('merge')
 	s.set_defaults(func=do_merge)
+
+	s = subparsers.add_parser('filter')
+	s.add_argument("--since", default="2012-01-01",
+			help="When to gather information from")
+	s.add_argument("--until", default="tomorrow",
+			help="When to stop gathering information")
+	s.set_defaults(func=do_filter)
 
 	s = subparsers.add_parser('weekly')
 	s.set_defaults(func=do_weekly)
