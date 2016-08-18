@@ -1,5 +1,36 @@
 #!/usr/bin/env python3
 
+'''
+ldtstool - Online and offline parsing of ticket data (in JSON)
+
+Note: The file format used by consumed and output by this tool is based
+      on the file format zendesk provides using its "Export as JSON" tool
+
+Generate a weekly report (the dates automatically select the previous week even
+if you leave your report until mid-way through the following week):
+
+    ldtstool fetch --since 'next-friday -13 days' \
+		    --until 'next-friday -1 week' | \
+    ldtstool filter --assignee daniel.thompson@linaro.org | \
+    ldtstool weekly
+
+Producing a customized HTML report (by dynamically generating markdown):
+
+    ldtstool fetch --since 2016-06-17 > tickets.json
+    ldtstool tags < tickets.json
+    ldtstool filter --tags ti --strict < tickets.json | \
+      ldtstool format --template '* [{id}]({quicklink}): {subject} ({status})' | \
+      cmark > ti_report.html
+
+Figuring out the number of unique users:
+
+    ldtstool filter --tags socionext --strict < tickets.json | \
+      ldtstool format --template '{requestor-email}' | \
+      sort | \
+      uniq
+
+'''
+
 import argparse
 import configparser
 import datetime
