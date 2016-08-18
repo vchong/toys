@@ -131,6 +131,10 @@ class Ticket(dict):
 
 		return org
 
+	def quicklink(self):
+		return 'https://linaro.zendesk.com/agent/tickets/{}'.format(
+				self['id'])
+
 	def requester(self, field):
 		return self._safe_get_string_field('requester', field)
 
@@ -348,6 +352,8 @@ def do_format(args):
 					val = t.id()
 				elif 'orgname' == field:
 					val = t.orgname()
+				elif 'quicklink' == field:
+					val = t.quicklink()
 				elif '-' in field:
 					(field, attr) = field.split('-', 1)
 					val = t[field][attr]
