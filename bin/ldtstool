@@ -108,16 +108,16 @@ def parse_date(s, end_of_day=False):
 
 	'''
 	#vvc
-	#date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
-	#date = str(date, 'utf-8')
-	#date = date.rstrip()
-	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
-	today = datetime.date.today()
-	lmon = today - datetime.timedelta(days=today.weekday(), weeks=1)
-	date = str(lmon)
+	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
+	date = str(date, 'utf-8')
+	date = date.rstrip()
+	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	#today = datetime.date.today()
+	#lmon = today - datetime.timedelta(days=today.weekday(), weeks=1)
+	#date = str(lmon)
 	#Do NOT print! Else u'll break da 'weekly' parsing
 	#print("Report starting from", date)
-	date = datetime.datetime.strptime(date, "%Y-%m-%d")
+	#date = datetime.datetime.strptime(date, "%Y-%m-%d")
 
 	# TODO: We might jump about a few hours here (date has not been
 	#       told to give back values in UTC)
@@ -136,16 +136,16 @@ def parse_date2(s, end_of_day=False):
 
 	'''
 	#vvc
-	#date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
-	#date = str(date, 'utf-8')
-	#date = date.rstrip()
-	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
-	today = datetime.date.today()
-	lsun = today - datetime.timedelta(days=today.weekday()) + datetime.timedelta(days=-1) 
-	date = str(lsun)
+	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
+	date = str(date, 'utf-8')
+	date = date.rstrip()
+	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+	#today = datetime.date.today()
+	#lsun = today - datetime.timedelta(days=today.weekday()) + datetime.timedelta(days=-1)
+	#date = str(lsun)
 	#Do NOT print! Else u'll break da 'weekly' parsing
 	#print("Report ending at", date)
-	date = datetime.datetime.strptime(date, "%Y-%m-%d")
+	#date = datetime.datetime.strptime(date, "%Y-%m-%d")
 
 	# TODO: We might jump about a few hours here (date has not been
 	#       told to give back values in UTC)
