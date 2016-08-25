@@ -6,6 +6,15 @@ ldtstool - Online and offline parsing of ticket data (in JSON)
 Note: The file format used by consumed and output by this tool is based
       on the file format zendesk provides using its "Export as JSON" tool
 
+Prerequisites (ubuntu:16.04):
+
+ * sudo apt -y install python3 python3-pip
+ * sudo apt -y install python3-iso8601 python3-keyring
+ * sudo pip3 install zdesk
+
+If you are running an older version of ubuntu (such as 14.04) then some
+of the distro provided packages may be out of date.
+
 Generate a weekly report (the dates automatically select the previous week even
 if you leave your report until mid-way through the following week):
 
@@ -56,7 +65,7 @@ import keyring
 try:
 	import zdesk
 except:
-	print("zdesk module not found - no online support", file=sys.stderr)
+	print("WARNING: zdesk module not found - no online support", file=sys.stderr)
 
 class UTC(datetime.tzinfo):
 	ZERO = datetime.timedelta(0)
@@ -398,6 +407,8 @@ def do_format(args):
 
 def do_passwd(args):
 	cfg = get_config()['zendesk']
+	print("WARNING: This is *not* your Google password. You have to set a")
+	print("         Zendesk password to use this tool.")
 	keyring.set_password(cfg['server'], cfg['username'], getpass.getpass())
 
 def do_tags(args):
@@ -435,7 +446,8 @@ def do_weekly(args):
 
 def main(argv):
 	parser = argparse.ArgumentParser()
-	subparsers = parser.add_subparsers()
+	subparsers = parser.add_subparsers(dest='sub-command')
+	subparsers.required = True	# Can't be set using named arguments (yet)
 
 	s = subparsers.add_parser('count')
 	s.add_argument('--by-member', action='store_true')
