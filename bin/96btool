@@ -3,6 +3,11 @@
 '''
 96btool - Tool to study a users forum posts
 
+Prerequisites (ubuntu:16.04):
+
+ * sudo apt -y install python3 python3-pip
+ * sudo apt -y install python3-iso8601 python3-lxml python3-requests-cache
+
 Reminders of interesting threads for a weekly report:
 
     96btool fetch --since 'next-friday -13 days' --nick danielt | \
@@ -12,7 +17,7 @@ Reminders of interesting threads for a weekly report:
 Create list of links in case the reminders are not enough:
 
     96btool fetch --since 'next-friday -13 days' --nick danielt | \
-    96btool fter --until 'next-friday -1 week' | \
+    96btool filter --until 'next-friday -1 week' | \
     96btool format --template '{uri}' | cut -f1 -d'#' | sort -u
 
 
@@ -217,7 +222,8 @@ def do_weekly(args):
 
 def main(argv):
 	parser = argparse.ArgumentParser()
-	subparsers = parser.add_subparsers()
+	subparsers = parser.add_subparsers(dest='sub-command')
+	subparsers.required = True	# Can't be set using named arguments (yet)
 
 	s = subparsers.add_parser('count')
 	s.set_defaults(func=do_count)
