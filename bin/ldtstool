@@ -359,6 +359,19 @@ def do_fetch(args):
 
 	json.dump(tickets, sys.stdout)
 
+def do_fields(args):
+	fields = set()
+
+	for t in Ticket.loads(sys.stdin.read()):
+		for k in t.keys():
+			fields.add(k)
+			if isinstance(t[k], dict):
+				for kk in t[k].keys():
+					fields.add('{}-{}'.format(k, kk))
+
+	for f in sorted(fields):
+		print(f)
+
 def do_filter(args):
 	since = parse_date(args.since)
 	until = parse_date(args.until)
@@ -469,6 +482,9 @@ def main(argv):
 	s.add_argument("--until", default="tomorrow",
 			help="When to stop gathering information")
 	s.set_defaults(func=do_fetch)
+
+	s = subparsers.add_parser('fields')
+	s.set_defaults(func=do_fields)
 
 	s = subparsers.add_parser("filter")
 	s.add_argument("--since", default="2012-01-01",
