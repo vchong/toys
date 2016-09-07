@@ -179,6 +179,13 @@ do
 	esac
 done
 
+# See if we can automatically set ARCH based on the existing config file
+if [ -e .config ]
+then
+	grep -q CONFIG_ARM=y .config && export ARCH=arm
+	grep -q CONFIG_ARM64=y .config && export ARCH=arm64
+fi
+
 # Launch the config commands and accept defaults for the new options
 if  [ ! -z "$args" ]
 then
