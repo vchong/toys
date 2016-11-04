@@ -503,6 +503,10 @@ def main(argv):
 			default="{id}: {subject} ({orgname} - {requester-email})")
 	s.set_defaults(func=do_format)
 
+	s = subparsers.add_parser('markdown')
+	s.set_defaults(func=do_format,
+			template="* [{id}]({quicklink}): {subject} ({status})")
+
 	s = subparsers.add_parser('passwd')
 	s.set_defaults(func=do_passwd)
 
