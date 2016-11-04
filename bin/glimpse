@@ -17,6 +17,7 @@ import datetime
 import getpass
 from jira.client import JIRA
 import iso8601
+import matplotlib.pyplot as plt
 import os
 import re
 import textwrap
@@ -60,6 +61,25 @@ hacks = (
 	('WIFI', 'WiFi'),
 	('wifi', 'WiFi'),
 )
+
+colour_table = {
+	'Actions' : 'green',
+	'Hisilicon' : 'yellowgreen',
+	'MediaTek' : 'yellow',
+	'Qualcomm' : 'lightskyblue',
+	'Spreadtrum' : 'blue',
+	'TI' : 'lightcoral',
+	'ZTE' : 'pink',
+
+	'BSP Analysis' : 'yellow',
+	'Engineering works' : 'gold',
+	'Training' : 'green',
+	'Upstream Consultancy' : 'pink',
+	'Member Build' : 'lightskyblue',
+	'LAVA' : 'orange',
+	'96Boards' : 'red',
+
+}
 
 component_aliases = {
 	'Android-upstreaming' : 'Linaro'
@@ -177,20 +197,24 @@ class Issue(object):
 
 	def get_component(self):
 		components = []
+		if not self.key.startswith('PSE-'):
+			components += ('Linaro', 'Engineering works')
 		for c in self._raw.fields.components:
 			name = c.name
 			if name in component_aliases:
 				name = component_aliases[name]
 			components.append(name)
 		for p in component_categories:
-			if p in components:
+			if p in components and p != "Linaro":
 				return p
 
 		warn(self, 'does not match the component categories')
-		return ''
+		return self.key
 
 	def get_member(self):
 		components = []
+		if not self.key.startswith('PSE-'):
+			components += ('Linaro', 'Engineering works')
 		for c in self._raw.fields.components:
 			name = c.name
 			if name in component_aliases:
@@ -209,7 +233,7 @@ class Issue(object):
 					'(incomplete category list?)')
 		else:
 			return components[0]
-		return ''
+		return self.key
 
 	def get_assignees(self):
 		msg = ""
@@ -486,6 +510,78 @@ def do_passwd(args):
 	cfg = get_config()['jira']
 	keyring.set_password(cfg['server'], cfg['username'], getpass.getpass())
 
+def do_piechart(args):
+	full_year_since = args.until.replace(year=args.until.year - 1)
+
+	since = args.since.strftime("%Y-%m-%d")
+	until = args.until.strftime("%Y-%m-%d")
+
+	query = 'project = "Premium Services Engineering"'
+	query += ' AND (statusCategory != Complete OR updatedDate >= "{}")'.format(
+			full_year_since.strftime("%Y/%m/%d %H:%M"))
+	query += args.constraint
+
+	jira = connect_to_jira()
+	report = Report(jira, jira.search_issues(query))
+
+	def summarize(categorize_with, age):
+		data = {}
+
+		for card in report.cards.values():
+			logs = card.get_worklog(jira, recurse=True, age=age)
+			# track effort in hours...
+			effort = sum(l.timeSpentSeconds for l in logs) / (60 * 60)
+
+			if effort < 0.05:
+				continue
+
+			c = str(categorize_with(card))
+			if c not in data:
+				data[c] = { 'count':0, 'effort':0.0, 'cards':[] }
+
+			data[c]['effort'] += effort
+			data[c]['count'] += 1
+			# Tracking card id is good for debugging!
+			data[c]['cards'].append(card.key)
+
+		return data
+
+	def plot(title, fname, data, field):
+		labels = [ d for d in sorted(data.keys()) ]
+		counts = [ data[d][field] for d in labels ]
+		colours = [ colour_table.get(m, 'gold') for m in labels ]
+
+		patches, texts = plt.pie(counts, colors=colours, startangle=90)
+		plt.legend(patches, labels, loc="best")
+		plt.axis('equal')
+		plt.suptitle(title, fontsize=14)
+		plt.savefig(fname)
+		plt.close()
+
+	by_member = summarize(Issue.get_member, age=(args.since, args.until))
+	plot('PSE card summary per member ({} to {})'.format(since, until),
+	     'cards_per_member-{}.png'.format(since), by_member, 'count')
+	plot('PSE effort summary per member ({} to {})'.format(since, until),
+	     'effort_per_member-{}.png'.format(since), by_member, 'effort')
+
+	by_member = summarize(Issue.get_member, age=(full_year_since, args.until))
+	plot('PSE card summary per member ({}/{})'.format(full_year_since.year, args.until.year),
+	     'cards_per_member-{}.png'.format(full_year_since.year), by_member, 'count')
+	plot('PSE effort summary per member ({}/{})'.format(full_year_since.year, args.until.year),
+	     'effort_per_member-{}.png'.format(full_year_since.year), by_member, 'effort')
+
+	by_component = summarize(Issue.get_component, age=(args.since, args.until))
+	plot('PSE card summary by category ({} to {})'.format(since, until),
+	     'cards_by_category-{}.png'.format(since), by_component, 'count')
+	plot('PSE effort summary by category ({} to {})'.format(since, until),
+	     'effort_by_category-{}.png'.format(since), by_component, 'effort')
+
+	by_component = summarize(Issue.get_component, age=(full_year_since, args.until))
+	plot('PSE card summary by category ({}/{})'.format(full_year_since.year, args.until.year),
+	     'cards_by_category-{}.png'.format(full_year_since.year), by_component, 'count')
+	plot('PSE effort summary by category ({}/{})'.format(full_year_since.year, args.until.year),
+	     'effort_by_category-{}.png'.format(full_year_since.year), by_component, 'effort')
+
 def do_worklog(args):
 	query = 'project = "Premium Services Engineering"'
 	query += ' AND updatedDate >= "{}"'.format(
@@ -542,6 +638,19 @@ def main(argv):
 	s = subparsers.add_parser("passwd",
 			help="Store your JIRA password on the keyring")
 	s.set_defaults(func=do_passwd)
+
+	# create the parser for the "piechart" command
+	s = subparsers.add_parser("piechart",
+			help="Generate piecharts for reporting")
+	s.add_argument("--since", default="last month -{} days 00:00:00".format(
+					datetime.date.today().day - 1),
+			help="When to gather information from")
+	s.add_argument("--until", default="-{} days 23:59:59".format(
+					datetime.date.today().day),
+			help="When to stop gathering information")
+	s.add_argument("constraint", nargs="*",
+			help="Any additional JQL contraints")
+	s.set_defaults(func=do_piechart)
 
 	# create the parser for the "worklog" command
 	s = subparsers.add_parser("worklog",
