@@ -8,7 +8,7 @@ Prerequisites (ubuntu:16.04):
  * sudo apt -y install python3 python3-pip
  * sudo apt -y install python3-iso8601 python3-keyring
  * sudo pip3 install jira
- 
+
 '''
 
 import argparse
@@ -118,7 +118,7 @@ class Issue(object):
 		self.url = 'https://projects.linaro.org/browse/' + issue.key
 
 		self._parse_worklog(jira)
-	
+
 	def _parse_worklog(self, jira):
 		self.worklog = []
 
@@ -304,7 +304,7 @@ class Report(object):
 		else:
 			warn(issue, 'has unexpected issuetype {}'.format(
 				issue.fields.issuetype.name))
-	
+
 	def link_blueprints(self):
 		'''Iterate over the blueprints and link them to their cards.'''
 		for b in self.blueprints.values():
@@ -317,11 +317,11 @@ class Report(object):
 				if b.parent not in self.cards:
 					warn(b, 'is linked to non-existant {}'.format(b.parent))
 					continue
-	
+
 			card = self.cards[b.parent]
 			card.assignees |= b.assignees
 			card.blueprints.append(b)
-	
+
 	@staticmethod
 	def print(msg, level=0):
 		print('\n'.join(Report.wrappers[level].wrap(msg)))
@@ -537,7 +537,6 @@ def main(argv):
 	s.add_argument("constraint", nargs="*",
 			help="Any additional JQL contraints")
 	s.set_defaults(func=do_monthly)
-
 
 	# create the parser for the "passwd" command
 	s = subparsers.add_parser("passwd",
