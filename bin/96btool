@@ -34,8 +34,10 @@ content = tree.xpath('//div[@class="bbp-reply-content"]')
 '''
 
 import argparse
+import collections
 import datetime
 import iso8601
+import hashlib
 import json
 import re
 import requests
@@ -47,8 +49,28 @@ import textwrap
 from lxml import html
 from lxml import etree
 
+# Let's make the plotting tools optional (for those who only use glimpse
+# for their weekly report)
+try:
+	import matplotlib.pyplot as plt
+except:
+	pass
+
 # Enable caching throughout
 requests_cache.install_cache()
+
+def get_colour(s):
+	override = {
+		'lava' : 'orange',
+		'LAVA' : 'orange',
+		'96boards' : 'red',
+		'96Boards' : 'red',
+	}
+
+	if s in override:
+		return override[s]
+
+	return '#{}'.format(hashlib.md5(str(s).encode('UTF-8')).hexdigest()[-6:])
 
 def parse_date(s, end_of_day=False):
 	'''Convert a string to a datetime object.
@@ -92,15 +114,19 @@ def get_replies(made_by, pageno=1):
 	links = tree.xpath('//a[@class="bbp-reply-permalink"]')
 	links = [ l.get('href') for l in links ]
 
-	titles = [ get_title(uri) for uri in links ]
+	page_data = [ get_page_data(uri) for uri in links ]
+	if len(page_data):
+		(titles, descriptions, topics) = zip(*page_data)
+	else:
+		(titles, descriptions, topics) = ([], [], [])
 
-	posts = [ { 'author': a, 'date': d, 'subject': t, 'uri': l, 'content': c }
-			for (a, d, t, l, c) in zip(authors, dates, titles, links, contents)]
+	posts = [ { 'author': a, 'date': d, 'subject': t, 'description': s, 'topic': p, 'uri': l, 'content': c }
+			for (a, d, t, s, p, l, c) in zip(authors, dates, titles, descriptions, topics, links, contents)]
 
 	return posts
 
-def get_title(uri):
-	#print('get_title({})'.format(uri), file=sys.stderr)
+def get_page_data(uri):
+	#print('get_page_data({})'.format(uri), file=sys.stderr)
 
 	page = requests.get(uri)
 	tree = html.fromstring(page.content)
@@ -110,7 +136,49 @@ def get_title(uri):
 	# that some are post-fixed by the name of the blog. For that reason
 	# we grab the common prefix (os.path.commonprefix does not require
 	# that it be used on a path).
-	return os.path.commonprefix([ t.get('content') for t in titles ])
+	title = os.path.commonprefix([ t.get('content') for t in titles ])
+
+	descriptions = tree.xpath('//meta[@property="og:description"]')
+	description = descriptions[0].get('content')
+
+	path = [ p.strip() for p in description.split('»') ]
+	try:
+		path = path[path.index('Topics')+1:-1]
+	except:
+		path = ['Unclassified',]
+
+	return (title, description, path)
+
+def get_count_by_topic(posts):
+	count = collections.defaultdict(int)
+	for p in posts:
+		count['/'.join(p['topic'])] += 1
+	return count
+
+def get_count_by_month(posts):
+	count = collections.defaultdict(int)
+	for p in posts:
+		d = iso8601.parse_date(p['date'])
+		count['{:04d}-{:02d}'.format(d.year, d.month)] += 1
+	return count
+
+def do_chart(args):
+	count = get_count_by_month(json.loads(sys.stdin.read()))
+
+	width = 0.8
+	left = [ x+(1-width)/2 for x in range(len(count)) ]
+	labels = sorted(count.keys())
+	height = [ count[l] for l in labels ]
+
+	fig, ax = plt.subplots()
+	ax.bar(left, height, width=width)
+	ax.set_xticks([ x+0.5 for x in range(len(count)) ])
+	ax.set_xticklabels(labels, rotation=90)
+
+	plt.suptitle("Forum posts count per month", fontsize=14)
+	plt.tight_layout()
+	plt.savefig(args.output)
+	plt.close()
 
 def do_count(args):
 	print(len(json.loads(sys.stdin.read())))
@@ -118,11 +186,18 @@ def do_count(args):
 def do_fetch(args):
 	since = parse_date(args.since)
 
+	if args.show_progress:
+		sys.stderr.write('.')
+		sys.stderr.flush()
 	posts = get_replies(args.nick)
 
 	# Fetch more pages until we reach the target date
 	pageno = 2
 	while posts[-1]['date'] > since:
+		if args.show_progress:
+			sys.stderr.write('.')
+			sys.stderr.flush()
+
 		more = get_replies(args.nick, pageno)
 		if not more:
 			break
@@ -184,6 +259,49 @@ def do_merge(args):
 
 	json.dump(posts, sys.stdout)
 
+def do_monthly(args):
+	digest = {}
+	for p in json.loads(sys.stdin.read()):
+		if p['subject'] not in digest:
+			digest[p['subject']] = p
+			p['count'] = 1
+		else:
+			digest[p['subject']]['count'] += 1
+
+	# Sort alphabetically by subject and re-index by topic
+	by_topic = collections.defaultdict(list)
+	for s in sorted(digest.keys()):
+		topic = ' - '.join(digest[s]['topic'])
+		by_topic[topic].append(digest[s])
+
+	print('<ul>')
+	for t in sorted(by_topic.keys()):
+		print('<li>{}'.format(t))
+		for s in by_topic[t]:
+			print('<ul>')
+			print('<li>{} (<a href="{}">{} post{}</a>)</li>'.format(
+					s['subject'], s['uri'], s['count'], 's' if s['count'] > 1 else ''))
+			print('</ul>')
+			
+		print('</li>')
+	print('</ul>')
+
+def do_piechart(args):
+	count = get_count_by_topic(json.loads(sys.stdin.read()))
+
+	labels = [ k for k in sorted(count.keys()) ]
+	counts = [ count[k] for k in labels ]
+	colours = [ get_colour(k) for k in labels ]
+
+	patches, texts = plt.pie(counts, colors=colours, startangle=90)
+	plt.legend(patches, labels, loc="best")
+	plt.axis('equal')
+	if args.title:
+		plt.suptitle(args.title, fontsize=14)
+	plt.tight_layout()
+	plt.savefig(args.output)
+	plt.close()
+
 def do_filter(args):
 	since = parse_date(args.since)
 	until = parse_date(args.until)
@@ -207,12 +325,9 @@ def do_weekly(args):
 
 	wrap("96Boards forum activity", level=1)
 
-	summary = {}
+	summary = collections.defaultdict(int)
 	for p in json.loads(sys.stdin.read()):
-		if p['subject'] not in summary:
-			summary[p['subject']] = 1
-		else:
-			summary[p['subject']] += 1
+		summary[p['subject']] += 1
 
 	for s in sorted(summary.keys()):
 		if summary[s] == 1:
@@ -225,6 +340,10 @@ def main(argv):
 	subparsers = parser.add_subparsers(dest='sub-command')
 	subparsers.required = True	# Can't be set using named arguments (yet)
 
+	s = subparsers.add_parser('chart')
+	s.add_argument("--output", default="96btool.png")
+	s.set_defaults(func=do_chart)
+
 	s = subparsers.add_parser('count')
 	s.set_defaults(func=do_count)
 
@@ -233,6 +352,8 @@ def main(argv):
 		        help="Nickname to fetch replies from");
 	s.add_argument("--since", default="2012-01-01",
 			help="When to gather information from")
+	s.add_argument("--show-progress", action="store_true",
+                        help="Show signs of progress whilst running")
 	s.set_defaults(func=do_fetch)
 
 	s = subparsers.add_parser('format')
@@ -242,6 +363,14 @@ def main(argv):
 
 	s = subparsers.add_parser('merge')
 	s.set_defaults(func=do_merge)
+
+	s = subparsers.add_parser('monthly')
+	s.set_defaults(func=do_monthly)
+
+	s = subparsers.add_parser('piechart')
+	s.add_argument("--title", default=None)
+	s.add_argument("--output", default="96btool.png")
+	s.set_defaults(func=do_piechart)
 
 	s = subparsers.add_parser('filter')
 	s.add_argument("--since", default="2012-01-01",
