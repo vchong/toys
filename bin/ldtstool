@@ -41,9 +41,11 @@ Figuring out the number of unique users:
 '''
 
 import argparse
+import collections
 import configparser
 import datetime
 import iso8601
+import hashlib
 import json
 import getpass
 import os
@@ -51,6 +53,13 @@ import re
 import textwrap
 import subprocess
 import sys
+
+# Let's make the plotting tools optional (for those who only use glimpse
+# for their weekly report)
+try:
+	import matplotlib.pyplot as plt
+except:
+	pass
 
 # Import keyring, suppressing any warnings from gi when we do so
 try:
@@ -261,87 +270,130 @@ class Ticket(dict):
 		tickets = [ Ticket(t) for t in data ]
 		return tickets
 
+def get_count_by_member(tickets):
+	count = collections.defaultdict(int)
+	for t in tickets:
+		count[t.orgname()] += 1
+	return count
+
+def get_count_by_month(tickets):
+	count = collections.defaultdict(int)
+	for t in tickets:
+		# Filter out tickets there were, in all probability, spam
+		if not t['assignee']:
+			continue
+
+		created = iso8601.parse_date(t['created_at'])
+		count['{:04d}-{:02d}'.format(created.year, created.month)] += 1
+	return count
+
+def get_count_by_category(tickets):
+	hacks = {
+		'11.12_android': 'android',
+		'64-bit': 'kernel',
+		'android_lmg': 'android',
+		'big.little': 'kernel',
+		'board_support': 'board', 
+		'eglibc' : 'toolchain',
+		'home_lhg': 'home',
+		'kernel_kwg': 'kernel',
+		'linaro_lsk': 'kernel',
+		'lava_infrastrucure': 'lava',
+		'toolchain_tcwg': 'toolchain',
+		'qemu_vritualization': 'qemu',
+		'networking_lng': 'networking',
+		'open_embedded_oe': 'distros',
+		'open_embedded': 'distros',
+		'ubuntu': 'distros',
+		'power_management_pmwg': 'power',
+		'power_management': 'power',
+		'eas': 'power',
+		'security_swg': 'security',
+	}
+	def hack(x):
+		if x in hacks:
+			return hacks[x]
+		return x
+
+	unknown = set()
+	globs = ( 'android', 'board', 'kernel', 'power', 'graphics', 'lava', 'qemu', 'toolchain', 'security', 'distros', '96boards', 'home', 'networking' )
+	nonglobs = set(('socionext', 'spam', 'arm', 'closed_by_merge', 'community', 'eng_escalate', 'hisi', 'huawei', 'internal_linaro', 'launchpad', 'level_0', 'level_1', 'level_2', 'level_3', 'linaro', 'open', 'other', 'probe', 'questions_issues_on_releases', 'release', 'releases.linaro.org', 'segment_group', 'spreadtrum', 'support', 'team', 'ti', 'advantech', 'broadcom', 'contact_us', 'defect_created', 'development_platforms', 'embedded_applications', 'general_support', 'getting_involved', 'gts', 'juno', 'landing_team', 'level_4', 'linaro_enterprise_group', 'membership', 'new', 'page', 'panda', 'qa_lava_test_scripts', 'qualcomm', 'qualcomm_stp', 'sample', 'samsung', 'sharp_zarus_sl5500', 'staging_vexpress_a9', 'v_fav', 'vicky_test', 'video_condecs', 'zd_test', 'zendesk'))
+
+	count = collections.defaultdict(int)
+	for t in tickets:
+		t['tags'] = [ hack(x) for x in t['tags'] ]
+
+		found = None
+		for g in globs:
+			if g in t['tags']:
+				if g in hacks:
+					g = hacks[g]
+				count[g] += 1
+				found = g
+				break
+
+		if not found:
+			unknown |= set(t['tags']) - nonglobs
+
+	if len(unknown):
+		print("WARNING: Unexpected tags: {}".format(sorted(unknown)))
+	return count
+
 def do_count(args):
 	tickets = Ticket.loads(sys.stdin.read())
+	count = None
 
-	count = {}
-	def count_into(x):
-		if not x in count:
-			count[x] = 1
-		else:
-			count[x] += 1
-	
-	def show_count():
+	if args.by_member:
+		count = get_count_by_member(tickets)
+
+	if args.by_month:
+		count = get_count_by_month(tickets)
+
+	if args.by_category:
+		count = get_count_by_category(tickets)
+
+	if count:
 		if args.csv:
 			for k in sorted(count.keys()):
 				print('"{}",{}'.format(k, count[k]))
 		else:
 			json.dump(count, sys.stdout, sort_keys=True)
+	else:
+		print(len(tickets))
+
+def get_colour(s):
+	override = {
+		'lava' : 'orange',
+		'LAVA' : 'orange',
+		'96boards' : 'red',
+		'96Boards' : 'red',
+	}
+
+	if s in override:
+		return override[s]
+
+	return '#{}'.format(hashlib.md5(str(s).encode('UTF-8')).hexdigest()[-6:])
+
+def do_piechart(args):
+	tickets = Ticket.loads(sys.stdin.read())
+	count = None
 
 	if args.by_member:
-		for t in tickets:
-			count_into(t.orgname())
-		show_count()
-		return
+		count = get_count_by_member(tickets)
+	else:
+		count = get_count_by_category(tickets)
 
-	if args.by_month:
-		for t in tickets:
-			if not t['assignee']:
-				continue
-			created_at = iso8601.parse_date(t['created_at'])
-			count_into('{:04d}-{:02d}'.format(created_at.year, created_at.month))
-		show_count()
-		return
+	labels = [ k for k in sorted(count.keys()) ]
+	counts = [ count[k] for k in labels ]
+	colours = [ get_colour(k) for k in labels ]
 
-	if args.by_category:
-		hacks = {
-			'android_lmg': 'android',
-			'board_support': 'board', 
-			'home_lhg': 'home',
-			'kernel_kwg': 'kernel',
-			'linaro_lsk': 'kernel',
-			'lava_infrastrucure': 'lava',
-			'toolchain_tcwg': 'toolchain',
-			'qemu_vritualization': 'qemu',
-			'networking_lng': 'networking',
-			'open_embedded_oe': 'distros',
-			'open_embedded': 'distros',
-			'ubuntu': 'distros',
-			'power_management_pmwg': 'power',
-			'power_management': 'power',
-			'eas': 'power',
-			'security_swg': 'security',
-		}
-		def hack(x):
-			if x in hacks:
-				return hacks[x]
-			return x
-
-		unknown = set()
-		globs = ( 'android', 'board', 'kernel', 'power', 'graphics', 'lava', 'qemu', 'toolchain', 'security', 'distros', '96boards', 'home', 'networking' )
-		nonglobs = set(('socionext', 'spam', 'arm', 'closed_by_merge', 'community', 'eng_escalate', 'hisi', 'huawei', 'internal_linaro', 'launchpad', 'level_0', 'level_1', 'level_2', 'level_3', 'linaro', 'open', 'other', 'probe', 'questions_issues_on_releases', 'release', 'releases.linaro.org', 'segment_group', 'spreadtrum', 'support', 'team', 'ti'))
-
-		for t in tickets:
-			t['tags'] = [ hack(x) for x in t['tags'] ]
-
-			found = None
-			for g in globs:
-				if g in t['tags']:
-					if g in hacks:
-						g = hacks[g]
-					count_into(g)
-					found = g
-					break
-
-			if not found:
-				unknown |= set(t['tags']) - nonglobs
-
-		if len(unknown):
-			print(sorted(unknown))
-		show_count()
-		return
-
-	print(len(tickets))
+	patches, texts = plt.pie(counts, colors=colours, startangle=90)
+	plt.legend(patches, labels, loc="best")
+	plt.axis('equal')
+	if args.title:
+		plt.suptitle(args.title, fontsize=14)
+	plt.savefig(args.output)
+	plt.close()
 
 def do_days(args):
 	for t in Ticket.loads(sys.stdin.read()):
@@ -417,6 +469,64 @@ def do_format(args):
 
 			ln = ln.replace(m.group(0), '{{{}}}'.format(fmt).format(val))
 		print(ln)
+
+def do_monthly(args):
+	tickets = Ticket.loads(sys.stdin.read())
+
+	def factory():
+		return collections.defaultdict(list)
+	by_member = collections.defaultdict(factory)
+	for t in tickets:
+		by_member[t.orgname()][t['status']].append(t)
+
+	print("<table border=2>")
+	print("<tr>")
+	print("<td>Member</td>")
+	print("<td>Tickets</td>")
+	print("</tr>")
+
+	def show_list(title, l):
+		print("<li>{}".format(title.capitalize()))
+		print("<ul>")
+		for t in l:
+			print("<li>")
+			print('{} (<a href="{}">{}</a>)'.format(
+				t['subject'], t.quicklink(), t.id()))
+			print("</li>")
+		print("</ul>")
+		print("</li>")
+
+	for member in sorted(by_member.keys()):
+		print("<tr>")
+		print("<td>{}</td>".format(member))
+		print("<td><ul>")
+
+		# Special case the community tickets
+		if member == "Community":
+			closed = len(by_member[member]['closed'])
+			solved = len(by_member[member]['solved'])
+			pending = len(by_member[member]['pending'])
+			nopen = len(by_member[member]['open'])
+
+			print("<li>{} closed/solved tickets</li>".format(
+					closed+solved))
+			if pending:
+				print("<li>{} pending tickets</li>".format(
+						pending))
+			print("<li>{} open tickets</li>".format(nopen))
+			print("</ul></td>")
+			continue
+
+		for status in ('closed', 'solved', 'pending', 'open'):
+			if status not in by_member[member]:
+				continue
+			show_list(status, by_member[member][status])
+			del by_member[member][status]
+		for status in sorted(by_member[member].keys()):
+			show_list(status, by_member[member][status])
+		print("</ul></td>")
+		print("</tr>")
+	print("</table>")
 
 def do_passwd(args):
 	cfg = get_config()['zendesk']
@@ -507,8 +617,20 @@ def main(argv):
 	s.set_defaults(func=do_format,
 			template="* [{id}]({quicklink}): {subject} ({status})")
 
+	s = subparsers.add_parser('monthly')
+	s.set_defaults(func=do_monthly)
+
 	s = subparsers.add_parser('passwd')
 	s.set_defaults(func=do_passwd)
+
+	s = subparsers.add_parser('piechart')
+	s.add_argument('--by-member', action='store_true')
+	s.add_argument('--by-category', action='store_true')
+	s.add_argument("--output", default="piechart.png",
+			help="Filename for the graph")
+	s.add_argument("--title", default=None,
+			help="Title of the graph")
+	s.set_defaults(func=do_piechart)
 
 	s = subparsers.add_parser('summary')
 	s.set_defaults(func=do_format,
