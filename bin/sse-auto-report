@@ -1,0 +1,157 @@
+#!/bin/sh
+
+#
+# sse-auto-report
+#
+# (Almost) fully automatic monthly report generator
+#
+
+#
+# General prep
+#
+
+day=`date +'%-d'`
+since=`date -d"last-month -$(($day - 1)) days 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+until=`date -d"-$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
+full_year_since=`date -d"-$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+
+echo "Generating report from $since until $until"
+echo
+
+if [ -z $SSE_DATA_DIR ]
+then
+	SSE_DATA_DIR=sse-auto-report.$$
+	mkdir $SSE_DATA_DIR
+fi
+cd $SSE_DATA_DIR
+
+#
+# Generate the monthly report template and the "solutions" graphs
+#
+
+printf "Generating solutions engineering report ..."
+[ -e monthly.html ] || \
+    glimpse monthly --fully-automatic --since "$since" --until "$until" > monthly.html 2> monthly.errlog
+sed -i -e '/^<\/*html>$/d' -e '/^<\/*head>$/d' -e '/^<title>/d' -e '/^<\/*body>/d' monthly.html
+printf " done\nGenerating solutions engineering graphs ..."
+[ -e piechart.errlog ] || \
+    glimpse piechart --since "$since" --until "$until" 2> piechart.errlog
+printf " done\n"
+
+#
+# Grab LDTS data for this month
+#
+
+printf "Grabbing LDTS monthly activity ..."
+[ -e ldts-month.json ] || \
+    ldtstool fetch --since "$since" > ldts-month.json
+printf " done\n"
+
+printf "Generating LDTS activity graphs ..."
+cat ldts-month.json | ldtstool filter --until "$until" | \
+	ldtstool piechart --by-member --output "ldts-by_member.png"
+cat ldts-month.json | ldtstool filter --until "$until" | \
+	ldtstool piechart --by-category --output "ldts-by_category.png"
+printf " done\n"
+
+printf "Generating LDTS activity report ..."
+#cat ldts-month.json | ldtstool filter --until "$until" | ldtstool markdown > ldts.md
+#cmark ldts.md > ldts.html
+cat ldts-month.json | ldtstool filter --until "$until" | ldtstool monthly > ldts.html
+printf " done\n"
+
+#
+# Slurp up posts by the team on the forum
+#
+
+for i in danielt ldts ldts-atsuka leo-yan vchong
+do
+	printf "Grabbing 96Boards data for $i ."
+	[ -e 96b-$i.json ] || \
+	    96btool fetch --nick $i --since "$full_year_since" --show-progress > 96b-$i.json
+	printf " %d posts\n" `cat 96b-$i.json | 96btool filter --since "$since" --until "$until" | 96btool count`
+done
+
+printf "Generating 96boards activity report ..."
+cat 96b-*.json | 96btool merge | 96btool filter --until "$until" > 96boards.json
+cat 96boards.json | 96btool filter --since "$since" | 96btool monthly > 96boards.html
+printf " done\n"
+
+printf "Generating 96boards activity graphs ..."
+cat 96boards.json | 96btool chart --output 96b_by_month.png
+cat 96boards.json | 96btool piechart --output 96b_pie_of_the_year.png
+cat 96boards.json | 96btool filter --since "$since" | 96btool piechart --output 96b_pie_of_the_month.png
+printf " done\n"
+
+#
+# Bring everything together as a HTML document
+#
+
+printf "\nGenerating report ..."
+
+cat > monthly_report.html <<EOF
+<html>
+<head>
+<title>Support and Solutions Engineering: $since - $until</title>
+</head>
+<body>
+<h1>Summary</h1>
+<p>This report is 100% auto-generated and does not have an executive summary</p>
+
+<h1>Solutions engineering</h1>
+
+<h2>Activity breakdown by member</h2>
+<p><img src="effort_per_member-`date -d "$since" +"%Y-%m-%d"`.png">
+<img src="effort_per_member-`date -d "$full_year_since" +"%Y"`.png"></p>
+<p>The charts above show the effort expended this month and contrast it 
+with the effort over the last 12 months.</p>
+<p><img src="cards_per_member-`date -d "$since" +"%Y-%m-%d"`.png">
+<img src="cards_per_member-`date -d "$full_year_since" +"%Y"`.png"></p>
+<p>The charts above show the number of cards for each member and contrast it 
+with the effort over the last 12 months. Each card represented a 
+unit of work that is visible to the member. Some members may be more 
+aware of the volume of cards than the effort we have expended for them;
+this information is presented here to help TLEs tackle any disconnect
+with the member in this area.
+<h2>Activity breakdown by category</h2>
+<p><img src="effort_by_category-`date -d "$since" +"%Y-%m-%d"`.png">
+<img src="effort_by_category-`date -d "$full_year_since" +"%Y"`.png"></p>
+<p>The chart above show the effort expended this month and contrast it 
+with the effort over the last 12 months.</p>
+<!--<p><img src="cards_by_category-`date -d "$since" +"%Y-%m-%d"`.png">
+<img src="cards_by_category-`date -d "$full_year_since" +"%Y"`.png"></p>-->
+<h2>Detailed activity report</h2>
+`cat monthly.html`
+
+<h1>Support via LDTS</h1>
+
+<h2>Activity breakdown by member</h2>
+<p><img src="ldts-by_member.png"></p>
+<p>For LDTS there is no effort tracking so we can only monitor ticket 
+volumes. The graph above shows the breakdown, by member, of tickets 
+this month. A contrasting graph for the full year is not yet available (
+Zendesk makes it difficult, but not impossible, to automate).</p>
+<h2>Activity breakdown by category</h2>
+<p><img src="ldts-by_category.png"></p>
+<p>The graph above shows the breakdown, by category, of tickets 
+this month.</p>
+<h2>Detailed activity report</h2>
+`cat ldts.html`
+
+<h1>96Boards support</h1>
+
+<h2>Post volumes</h2>
+<p><img src="96b_by_month.png"></p>
+<h2>Activity breakdown by topic</h2>
+<p><img src="96b_pie_of_the_month.png">
+<img src="96b_pie_of_the_year.png"></p>
+<h2>Detailed activity report</h2>
+<p>The graph shows the post volume by SSE team members. It does not 
+include overall forum activity because this is not reported by SSE and/
+or is not available via any fully automated tool.</p>
+`cat 96boards.html`
+</body>
+</html>
+EOF
+
+printf " $SSE_DATA_DIR/monthly_report.html\n"
