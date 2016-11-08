@@ -15,14 +15,21 @@ import argparse
 import configparser
 import datetime
 import getpass
+import hashlib
 from jira.client import JIRA
 import iso8601
-import matplotlib.pyplot as plt
 import os
 import re
 import textwrap
 import subprocess
 import sys
+
+# Let's make the plotting tools optional (for those who only use glimpse
+# for their weekly report)
+try:
+	import matplotlib.pyplot as plt
+except:
+	pass
 
 # Import keyring, suppressing any warnings from gi when we do so
 try:
@@ -62,24 +69,18 @@ hacks = (
 	('wifi', 'WiFi'),
 )
 
-colour_table = {
-	'Actions' : 'green',
-	'Hisilicon' : 'yellowgreen',
-	'MediaTek' : 'yellow',
-	'Qualcomm' : 'lightskyblue',
-	'Spreadtrum' : 'blue',
-	'TI' : 'lightcoral',
-	'ZTE' : 'pink',
+def get_colour(s):
+	override = {
+		'lava' : 'orange',
+		'LAVA' : 'orange',
+		'96boards' : 'red',
+		'96Boards' : 'red',
+	}
 
-	'BSP Analysis' : 'yellow',
-	'Engineering works' : 'gold',
-	'Training' : 'green',
-	'Upstream Consultancy' : 'pink',
-	'Member Build' : 'lightskyblue',
-	'LAVA' : 'orange',
-	'96Boards' : 'red',
+	if s in override:
+		return override[s]
 
-}
+	return '#{}'.format(hashlib.md5(str(s).encode('UTF-8')).hexdigest()[-6:])
 
 component_aliases = {
 	'Android-upstreaming' : 'Linaro'
@@ -480,25 +481,44 @@ def do_monthly(args):
 		print('<tr><td>{}</td>'.format(member))
 		print('<td><ul>')
 		for card in sorted(report.members[member], key=lambda x: x.key):
-			print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
-				card.summary, card.url, card.key))
+			if not args.fully_automatic:
+				print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+					card.summary, card.url, card.key))
+				just_in_time = True
+			else:
+				just_in_time = False
 			for log in card.get_worklog(
 					jira, age=(args.since, args.until),
 					recurse=True):
 				for bullet in log.progress:
+					if not just_in_time:
+						print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+							card.summary, card.url, card.key))
+					just_in_time = True
+
 					print('<li>{}</li>'.format(bullet))
-			print('</ul></li>')
+			if just_in_time:
+				print('</ul></li>')
 		print('</ul></td>')
 		print('<td><ul>')
 		for card in sorted(report.members[member], key=lambda x: x.key):
-			print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
-				card.summary, card.url, card.key))
+			if not args.fully_automatic:
+				print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+					card.summary, card.url, card.key))
+				just_in_time = True
+			else:
+				just_in_time = False
 			for log in card.get_worklog(
 					jira, age=(args.since, args.until),
 					recurse=True):
 				for bullet in log.plans:
+					if not just_in_time:
+						print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+							card.summary, card.url, card.key))
+						just_in_time = True
 					print('<li>{}</li>'.format(bullet))
-			print('</ul></li>')
+			if just_in_time:
+				print('</ul></li>')
 		print('</ul></td>')
 		print('</tr>')
 	print ('''\
@@ -549,7 +569,7 @@ def do_piechart(args):
 	def plot(title, fname, data, field):
 		labels = [ d for d in sorted(data.keys()) ]
 		counts = [ data[d][field] for d in labels ]
-		colours = [ colour_table.get(m, 'gold') for m in labels ]
+		colours = [ get_colour(m) for m in labels ]
 
 		patches, texts = plt.pie(counts, colors=colours, startangle=90)
 		plt.legend(patches, labels, loc="best")
@@ -632,6 +652,7 @@ def main(argv):
 			help="When to stop gathering information")
 	s.add_argument("constraint", nargs="*",
 			help="Any additional JQL contraints")
+	s.add_argument("--fully-automatic", action="store_true")
 	s.set_defaults(func=do_monthly)
 
 	# create the parser for the "passwd" command
