@@ -12,6 +12,7 @@ Prerequisites (ubuntu:16.04):
 '''
 
 import argparse
+import collections
 import configparser
 import datetime
 import getpass
@@ -75,6 +76,8 @@ def get_colour(s):
 		'LAVA' : 'orange',
 		'96boards' : 'red',
 		'96Boards' : 'red',
+		'Marvell' : 'green',
+		'Hisilicon' : 'pink',
 	}
 
 	if s in override:
@@ -575,6 +578,7 @@ def do_piechart(args):
 		plt.legend(patches, labels, loc="best")
 		plt.axis('equal')
 		plt.suptitle(title, fontsize=14)
+		plt.tight_layout()
 		plt.savefig(fname)
 		plt.close()
 
@@ -601,6 +605,52 @@ def do_piechart(args):
 	     'cards_by_category-{}.png'.format(full_year_since.year), by_component, 'count')
 	plot('PSE effort summary by category ({}/{})'.format(full_year_since.year, args.until.year),
 	     'effort_by_category-{}.png'.format(full_year_since.year), by_component, 'effort')
+
+	by_worklog = []
+	for c in report.cards.values():
+		worklog = c.get_worklog(jira, recurse=True)
+		worklog = [ { 'raw': w } for w in worklog ]
+		for w in worklog:
+			l = w['raw']
+			w['date'] = iso8601.parse_date(l.started)
+			w['effort'] = l.timeSpentSeconds / (60 * 60)
+			w['epic'] = c.key
+		by_worklog += worklog
+
+	by_month = collections.defaultdict(list)
+	for w in by_worklog:
+		d = w['date']
+		by_month['{:04d}-{:02d}'.format(d.year, d.month)].append(w)
+
+	by_month_by_member = dict(by_month)
+	for month in by_month_by_member.keys():
+		effort = collections.defaultdict(int)
+		for l in by_month_by_member[month]:
+			member = report.cards[l['epic']].get_member()
+			effort[member] += l['effort']
+		by_month_by_member[month] = effort
+
+	members = set()
+	for month in by_month_by_member.values():
+		members |= set(month.keys())
+	members = sorted(members)
+
+	width = 1
+	left = [ x+(1-width)/2 for x in range(len(by_month_by_member)) ]
+	labels = sorted(by_month_by_member.keys())
+
+	plots = []
+	for m in members:
+		values = [ by_month_by_member[l][m] for l in labels ]
+		plots.append(plt.bar(left, values, width, color=get_colour(m)))
+
+	plt.ylabel('Effort')
+	plt.xlabel('Effort by month and member')
+	plt.title('Effort by month and member')
+	plt.xticks([ x+0.5 for x in range(len(by_month_by_member)) ], labels, rotation=90)
+	plt.legend(plots, members, loc='best')
+	plt.savefig('effort_by_month_and_member.png')
+	plt.close()
 
 def do_worklog(args):
 	query = 'project = "Premium Services Engineering"'
