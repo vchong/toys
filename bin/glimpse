@@ -648,8 +648,8 @@ def do_piechart(args):
 	plt.xlabel('Effort by month and member')
 	plt.title('Effort by month and member')
 	plt.xticks([ x+0.5 for x in range(len(by_month_by_member)) ], labels, rotation=90)
-	plt.legend(plots, members, loc='best')
-	plt.savefig('effort_by_month_and_member.png')
+	lgd = plt.legend(plots, members, bbox_to_anchor=(1.05, 1), loc=2)
+	plt.savefig('effort_by_month_and_member.png', bbox_extra_artists=(lgd,), bbox_inches='tight')
 	plt.close()
 
 def do_worklog(args):
