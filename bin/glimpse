@@ -93,14 +93,8 @@ displayname_aliases = {
 	'Esla.Anzaku@linaro.org' : 'Elsa'
 }
 
-# When a card has more than one component we will remove these labels
-# *in order* until there is only one component to use as a sub-title.
-component_purge = (
-	'Engineering works', 'Linaro', 'BSP Analysis', 'Upstream Consultancy', 'Member Build', 'LAVA', 'Training', '96Boards'
-)
-
 component_categories = (
-	'BSP Analysis', 'Engineering works', 'Member Build', 'LAVA', 'Training', '96Boards', 'Upstream Consultancy', 'Linaro'
+	'BSP Analysis', 'Engineering works', 'Member Build', 'LAVA', 'Training', '96Boards', 'Upstream Consultancy', 'Metis', 'Linaro'
 )
 
 def warn(issue, msg):
@@ -309,25 +303,11 @@ class Report(object):
 					name = component_aliases[name]
 				components.append(name)
 
-			# Anything from an "alien" JIRA project is implicitly a Linaro task
-			if not issue.key.startswith('PSE-'):
-				components.append('Linaro')
+			name = issue.get_member()
+			if name not in self.members:
+				self.members[name] = []
+			self.members[name].append(issue)
 
-			for p in component_purge:
-				if len(components) < 2:
-					break
-				if p in components:
-					components.remove(p)
-
-			if len(components) == 0:
-				warn(issue, 'has no component')
-			elif len(components) >= 2:
-				warn(issue, 'has too many components '+
-						'(incomplete purge list?)')
-			for name in components:
-				if name not in self.members:
-					self.members[name] = []
-				self.members[name].append(issue)
 			issue.blueprints = []
 		else:
 			warn(issue, 'has unexpected issuetype {}'.format(
