@@ -116,12 +116,12 @@ def get_replies(made_by, pageno=1):
 
 	page_data = [ get_page_data(uri) for uri in links ]
 	if len(page_data):
-		(titles, descriptions, topics) = zip(*page_data)
+		(titles, descriptions, topics, origps) = zip(*page_data)
 	else:
-		(titles, descriptions, topics) = ([], [], [])
+		(titles, descriptions, topics, origps) = ([], [], [], [])
 
-	posts = [ { 'author': a, 'date': d, 'subject': t, 'description': s, 'topic': p, 'uri': l, 'content': c }
-			for (a, d, t, s, p, l, c) in zip(authors, dates, titles, descriptions, topics, links, contents)]
+	posts = [ { 'author': a, 'original_poster': o, 'date': d, 'subject': t, 'description': s, 'topic': p, 'uri': l, 'content': c }
+			for (a, o, d, t, s, p, l, c) in zip(authors, origps, dates, titles, descriptions, topics, links, contents)]
 
 	return posts
 
@@ -131,6 +131,7 @@ def get_page_data(uri):
 	page = requests.get(uri)
 	tree = html.fromstring(page.content)
 	titles = tree.xpath('//meta[@property="og:title"]')
+	authors = tree.xpath('//a[@class="bbp-author-name"]/text()')
 
 	# There may be more than one title. At present these differ only in
 	# that some are post-fixed by the name of the blog. For that reason
@@ -147,7 +148,12 @@ def get_page_data(uri):
 	except:
 		path = ['Unclassified',]
 
-	return (title, description, path)
+	if len(authors) >= 1:
+		original_poster = authors[0]
+	else:
+		original_poster = 'Anonymous'
+
+	return (title, description, path, original_poster)
 
 def get_count_by_topic(posts):
 	count = collections.defaultdict(int)
@@ -200,9 +206,8 @@ def do_chart(args):
 	#plt.xlabel('Posts by month and topic')
 	plt.title('Posts by month and topic')
 	plt.xticks([ x+0.5 for x in range(len(by_month_by_topic)) ], labels, rotation=90)
-	plt.legend(plots, topics, loc='best')
-	plt.tight_layout()
-	plt.savefig(args.output)
+	lgd = plt.legend(plots, topics, bbox_to_anchor=(1.05, 1), loc=2)
+	plt.savefig(args.output, bbox_extra_artists=(lgd,), bbox_inches='tight')
 	plt.close()
 
 def do_count(args):
@@ -299,17 +304,23 @@ def do_monthly(args):
 		topic = ' - '.join(digest[s]['topic'])
 		by_topic[topic].append(digest[s])
 
-	print('<ul>')
+	print('''\
+<table border=2>
+<tr>
+<td>Board</td>
+<td>Posts</td>
+</tr>
+''')
+
 	for t in sorted(by_topic.keys()):
-		print('<li>{}'.format(t))
+		print('<tr>')
+		print('<td>{}</td>'.format(t))
+		print('<td><ul>')
 		for s in by_topic[t]:
-			print('<ul>')
-			print('<li>{} (<a href="{}">{} post{}</a>)</li>'.format(
-					s['subject'], s['uri'], s['count'], 's' if s['count'] > 1 else ''))
-			print('</ul>')
-			
-		print('</li>')
-	print('</ul>')
+			print('<li>{} by {} (<a href="{}">{} post{}</a>)</li>'.format(
+					s['subject'], s['original_poster'], s['uri'], s['count'], 's' if s['count'] > 1 else ''))
+		print('</ul></td></tr>')
+	print('</table>')
 
 def do_piechart(args):
 	count = get_count_by_topic(json.loads(sys.stdin.read()))
