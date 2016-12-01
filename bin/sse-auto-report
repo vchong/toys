@@ -21,8 +21,9 @@ echo
 if [ -z $SSE_DATA_DIR ]
 then
 	SSE_DATA_DIR=sse-auto-report.$$
-	mkdir $SSE_DATA_DIR
 fi
+
+mkdir -p $SSE_DATA_DIR
 cd $SSE_DATA_DIR
 
 #
