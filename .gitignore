@@ -3,4 +3,5 @@
 *~
 loop/loop-alloc.o
 loop/loop-alloc
+reports/
 sse-auto-report.*/
