@@ -152,7 +152,10 @@ def get_page_data(uri):
 def get_count_by_topic(posts):
 	count = collections.defaultdict(int)
 	for p in posts:
-		count['/'.join(p['topic'])] += 1
+		# The legend gets a little large if we include the path leading to
+		# each sub-forum... lets just use the sub-forum name.
+		#count['/'.join(p['topic'])] += 1
+		count[p['topic'][-1]] += 1
 	return count
 
 def get_count_by_month(posts):
@@ -163,19 +166,41 @@ def get_count_by_month(posts):
 	return count
 
 def do_chart(args):
-	count = get_count_by_month(json.loads(sys.stdin.read()))
+	posts = json.loads(sys.stdin.read())
 
-	width = 0.8
-	left = [ x+(1-width)/2 for x in range(len(count)) ]
-	labels = sorted(count.keys())
-	height = [ count[l] for l in labels ]
+	by_month = collections.defaultdict(list)
+	for p in posts:
+		d = iso8601.parse_date(p['date'])
+		by_month['{:04d}-{:02d}'.format(d.year, d.month)].append(p)
 
-	fig, ax = plt.subplots()
-	ax.bar(left, height, width=width)
-	ax.set_xticks([ x+0.5 for x in range(len(count)) ])
-	ax.set_xticklabels(labels, rotation=90)
+	by_month_by_topic = dict(by_month)
+	for month in by_month_by_topic.keys():
+		count = collections.defaultdict(int)
+		for p in by_month_by_topic[month]:
+			#topic = '/'.join(p['topic'])
+			topic = p['topic'][-1]
+			count[topic] += 1
+		by_month_by_topic[month] = count
 
-	plt.suptitle("Forum posts count per month", fontsize=14)
+	topics = set()
+	for month in by_month_by_topic.values():
+		topics |= set(month.keys())
+	topics = sorted(topics)
+
+	width = 1
+	left = [ x+(1-width)/2 for x in range(len(by_month_by_topic)) ]
+	labels = sorted(by_month_by_topic.keys())
+
+	plots = []
+	for m in topics:
+		values = [ by_month_by_topic[l][m] for l in labels ]
+		plots.append(plt.bar(left, values, width, color=get_colour(m)))
+
+	plt.ylabel('Number of posts')
+	#plt.xlabel('Posts by month and topic')
+	plt.title('Posts by month and topic')
+	plt.xticks([ x+0.5 for x in range(len(by_month_by_topic)) ], labels, rotation=90)
+	plt.legend(plots, topics, loc='best')
 	plt.tight_layout()
 	plt.savefig(args.output)
 	plt.close()
