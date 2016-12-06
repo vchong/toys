@@ -198,9 +198,11 @@ def do_chart(args):
 	labels = sorted(by_month_by_topic.keys())
 
 	plots = []
+	bottom = [0 for l in labels]
 	for m in topics:
 		values = [ by_month_by_topic[l][m] for l in labels ]
-		plots.append(plt.bar(left, values, width, color=get_colour(m)))
+		plots.append(plt.bar(left, values, width, bottom=bottom, color=get_colour(m)))
+		bottom = [sum(x) for x in zip(bottom, values)]
 
 	plt.ylabel('Number of posts')
 	#plt.xlabel('Posts by month and topic')
