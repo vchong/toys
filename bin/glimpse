@@ -70,6 +70,10 @@ hacks = (
 	('wifi', 'WiFi'),
 )
 
+def add_percent_labels(labels, values):
+	total = sum(values)
+	return [ '{} ({:1.1f}%)'.format(l, 100 * (v / total)) for l, v in zip(labels, values) ]
+
 def get_colour(s):
 	override = {
 		'lava' : 'orange',
@@ -555,7 +559,7 @@ def do_piechart(args):
 		colours = [ get_colour(m) for m in labels ]
 
 		patches, texts = plt.pie(counts, colors=colours, startangle=90)
-		plt.legend(patches, labels, loc="best")
+		plt.legend(patches, add_percent_labels(labels, counts), loc="best")
 		plt.axis('equal')
 		plt.suptitle(title, fontsize=14)
 		plt.tight_layout()
