@@ -14,6 +14,7 @@ Prerequisites (ubuntu:16.04):
 import argparse
 import collections
 import configparser
+import copy
 import datetime
 import getpass
 import hashlib
@@ -196,6 +197,21 @@ class Issue(object):
 
 		warn(self, 'has bad status ({})'.format(self.fields.status.name))
 		return set()
+
+	def _get_date(self, date):
+		if not date:
+			return None
+
+		return iso8601.parse_date(date)
+
+	def created(self):
+		return iso8601.parse_date(self._raw.fields.created)
+
+	def resolved(self):
+		d = self._raw.fields.resolutiondate
+		if not d:
+			return None
+		return iso8601.parse_date(d)
 
 	def get_component(self):
 		components = []
@@ -636,6 +652,70 @@ def do_piechart(args):
 	plt.xticks([ x+0.5 for x in range(len(by_month_by_member)) ], labels, rotation=90)
 	lgd = plt.legend(plots, members, bbox_to_anchor=(1.05, 1), loc=2)
 	plt.savefig('effort_by_month_and_member.png', bbox_extra_artists=(lgd,), bbox_inches='tight')
+	plt.close()
+
+	### Total count of cards
+
+	all_cards = report.cards.copy()
+	all_cards.update(report.blueprints)
+	open_cards = [ c for c in all_cards.values() if c.resolved() != None ]
+
+	by_month = {}
+	d = full_year_since
+	while d < args.until:
+		by_month['{:04d}-{:02d}'.format(d.year, d.month)] = []
+		d = d.replace(month=d.month + 1) if d.month < 12 else d.replace(d.year + 1, 1)
+
+	created_by_month = copy.deepcopy(by_month)
+	for c in all_cards.values():
+		d = c.created()
+		if d < full_year_since or d > args.until:
+			continue
+		print("{} created on {}".format(c.key, d))
+		created_by_month['{:04d}-{:02d}'.format(d.year, d.month)].append(c.key)
+
+	print(created_by_month)
+
+	resolved_by_month = copy.deepcopy(by_month)
+	for c in all_cards.values():
+		d = c.resolved()
+		if d == None or d < full_year_since or d > args.until:
+			continue
+		print("{} resolved on {}".format(c.key, d))
+		resolved_by_month['{:04d}-{:02d}'.format(d.year, d.month)].append(c.key)
+
+	print(resolved_by_month)
+
+	labels = sorted(by_month.keys())
+	created_bys = [ len(created_by_month[l]) for l in labels ]
+	resolved_bys = [ len(resolved_by_month[l]) for l in labels ]
+
+	backwards = [ b for b in zip(created_bys, resolved_bys) ]
+	backwards.reverse()
+	count = len(open_cards)
+	num_open = []
+	for c, r in backwards:
+		num_open.insert(0, count)
+		count += r - c
+
+	print ([x for x in zip(labels, created_bys, resolved_bys, num_open)])
+
+	fig, ax = plt.subplots()
+	bar_width = 0.25
+	index = [x+bar_width for x in range(len(labels))]
+	opacity = 0.4
+
+	plt.plot([x+bar_width for x in index], num_open, color='b', linestyle='--', marker='o', label='Work to be completed')
+	rects1 = plt.bar(index, created_bys, bar_width,alpha=opacity, color='b',label='New work')
+	rects2 = plt.bar([x+bar_width for x in index], resolved_bys, bar_width,alpha=opacity,color='r',label='Completed work')
+
+	#plt.xlabel('Time')
+	plt.ylabel('Work items (cards & blueprints)')
+	plt.title('Work items tracked per-month')
+	plt.grid(zorder=0)
+	plt.xticks([x+bar_width for x in index], labels, rotation=90)
+	lgd = plt.legend(bbox_to_anchor=(1.05, 1), loc=2)
+	plt.savefig('card_tracker.png', bbox_extra_artists=(lgd,), bbox_inches='tight')
 	plt.close()
 
 def do_worklog(args):
