@@ -538,6 +538,7 @@ def do_piechart(args):
 
 	since = args.since.strftime("%Y-%m-%d")
 	until = args.until.strftime("%Y-%m-%d")
+	fys = full_year_since.strftime("%Y-%m-%d")
 
 	query = 'project = "Premium Services Engineering"'
 	query += ' AND (statusCategory != Complete OR updatedDate >= "{}")'.format(
@@ -584,27 +585,27 @@ def do_piechart(args):
 
 	by_member = summarize(Issue.get_member, age=(args.since, args.until))
 	plot('PSE card summary per member ({} to {})'.format(since, until),
-	     'cards_per_member-{}.png'.format(since), by_member, 'count')
+	     'cards_per_member.png', by_member, 'count')
 	plot('PSE effort summary per member ({} to {})'.format(since, until),
-	     'effort_per_member-{}.png'.format(since), by_member, 'effort')
+	     'effort_per_member.png', by_member, 'effort')
 
 	by_member = summarize(Issue.get_member, age=(full_year_since, args.until))
-	plot('PSE card summary per member ({}/{})'.format(full_year_since.year, args.until.year),
-	     'cards_per_member-{}.png'.format(full_year_since.year), by_member, 'count')
-	plot('PSE effort summary per member ({}/{})'.format(full_year_since.year, args.until.year),
-	     'effort_per_member-{}.png'.format(full_year_since.year), by_member, 'effort')
+	plot('PSE card summary per member ({} to {})'.format(fys, until),
+	     'cards_per_member-full_year.png', by_member, 'count')
+	plot('PSE effort summary per member ({} to {})'.format(fys, until),
+	     'effort_per_member-full_year.png', by_member, 'effort')
 
 	by_component = summarize(Issue.get_component, age=(args.since, args.until))
 	plot('PSE card summary by category ({} to {})'.format(since, until),
-	     'cards_by_category-{}.png'.format(since), by_component, 'count')
+	     'cards_by_category.png', by_component, 'count')
 	plot('PSE effort summary by category ({} to {})'.format(since, until),
-	     'effort_by_category-{}.png'.format(since), by_component, 'effort')
+	     'effort_by_category.png', by_component, 'effort')
 
 	by_component = summarize(Issue.get_component, age=(full_year_since, args.until))
-	plot('PSE card summary by category ({}/{})'.format(full_year_since.year, args.until.year),
-	     'cards_by_category-{}.png'.format(full_year_since.year), by_component, 'count')
-	plot('PSE effort summary by category ({}/{})'.format(full_year_since.year, args.until.year),
-	     'effort_by_category-{}.png'.format(full_year_since.year), by_component, 'effort')
+	plot('PSE card summary by category ({} to {})'.format(fys, until),
+	     'cards_by_category-full_year.png'.format(full_year_since.year), by_component, 'count')
+	plot('PSE effort summary by category ({} to {})'.format(fys, until),
+	     'effort_by_category-full_year.png'.format(full_year_since.year), by_component, 'effort')
 
 	by_worklog = []
 	for c in report.cards.values():
@@ -671,20 +672,14 @@ def do_piechart(args):
 		d = c.created()
 		if d < full_year_since or d > args.until:
 			continue
-		print("{} created on {}".format(c.key, d))
 		created_by_month['{:04d}-{:02d}'.format(d.year, d.month)].append(c.key)
-
-	print(created_by_month)
 
 	resolved_by_month = copy.deepcopy(by_month)
 	for c in all_cards.values():
 		d = c.resolved()
 		if d == None or d < full_year_since or d > args.until:
 			continue
-		print("{} resolved on {}".format(c.key, d))
 		resolved_by_month['{:04d}-{:02d}'.format(d.year, d.month)].append(c.key)
-
-	print(resolved_by_month)
 
 	labels = sorted(by_month.keys())
 	created_bys = [ len(created_by_month[l]) for l in labels ]

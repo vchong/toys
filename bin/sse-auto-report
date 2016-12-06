@@ -102,12 +102,13 @@ cat > monthly_report.html <<EOF
 <h1>Solutions engineering</h1>
 
 <h2>Activity breakdown by member</h2>
-<p><img src="effort_per_member-`date -d "$since" +"%Y-%m-%d"`.png">
-<img src="effort_per_member-`date -d "$full_year_since" +"%Y"`.png"></p>
+<p><img src="effort_by_month_and_member.png"></p>
+<p><img src="effort_per_member.png" width="400" height="300">
+<img src="effort_per_member-full_year.png" width="400" height="300"></p>
 <p>The charts above show the effort expended this month and contrast it 
 with the effort over the last 12 months.</p>
-<p><img src="cards_per_member-`date -d "$since" +"%Y-%m-%d"`.png">
-<img src="cards_per_member-`date -d "$full_year_since" +"%Y"`.png"></p>
+<p><img src="cards_per_member.png" width="400" height="300">
+<img src="cards_per_member-full_year.png" width="400" height="300"></p>
 <p>The charts above show the number of cards for each member and contrast it 
 with the effort over the last 12 months. Each card represented a 
 unit of work that is visible to the member. Some members may be more 
@@ -115,25 +116,25 @@ aware of the volume of cards than the effort we have expended for them;
 this information is presented here to help TLEs tackle any disconnect
 with the member in this area.
 <h2>Activity breakdown by category</h2>
-<p><img src="effort_by_category-`date -d "$since" +"%Y-%m-%d"`.png">
-<img src="effort_by_category-`date -d "$full_year_since" +"%Y"`.png"></p>
+<p><img src="effort_by_category.png" width="400" height="300">
+<img src="effort_by_category-full_year.png" width="400" height="300"></p>
 <p>The chart above show the effort expended this month and contrast it 
 with the effort over the last 12 months.</p>
-<!--<p><img src="cards_by_category-`date -d "$since" +"%Y-%m-%d"`.png">
-<img src="cards_by_category-`date -d "$full_year_since" +"%Y"`.png"></p>-->
+<!--<p><img src="cards_by_category.png" width="400" height="300">
+<img src="cards_by_category-full_year.png" width="400" height="300"></p>-->
 <h2>Detailed activity report</h2>
 `cat monthly.html`
 
 <h1>Support via LDTS</h1>
 
 <h2>Activity breakdown by member</h2>
-<p><img src="ldts-by_member.png"></p>
+<p><img src="ldts-by_member.png" width="400" height="300"></p>
 <p>For LDTS there is no effort tracking so we can only monitor ticket 
 volumes. The graph above shows the breakdown, by member, of tickets 
 this month. A contrasting graph for the full year is not yet available (
 Zendesk makes it difficult, but not impossible, to automate).</p>
 <h2>Activity breakdown by category</h2>
-<p><img src="ldts-by_category.png"></p>
+<p><img src="ldts-by_category.png" width="400" height="300"></p>
 <p>The graph above shows the breakdown, by category, of tickets 
 this month.</p>
 <h2>Detailed activity report</h2>
@@ -144,8 +145,8 @@ this month.</p>
 <h2>Post volumes</h2>
 <p><img src="96b_by_month.png"></p>
 <h2>Activity breakdown by topic</h2>
-<p><img src="96b_pie_of_the_month.png">
-<img src="96b_pie_of_the_year.png"></p>
+<p><img src="96b_pie_of_the_month.png" width="400" height="300">
+<img src="96b_pie_of_the_year.png" width="400" height="300"></p>
 <h2>Detailed activity report</h2>
 <p>The graph shows the post volume by SSE team members. It does not 
 include overall forum activity because this is not reported by SSE and/
