@@ -592,7 +592,7 @@ def do_piechart(args):
 
 	by_worklog = []
 	for c in report.cards.values():
-		worklog = c.get_worklog(jira, recurse=True)
+		worklog = c.get_worklog(jira, recurse=True, age=(full_year_since, args.until))
 		worklog = [ { 'raw': w } for w in worklog ]
 		for w in worklog:
 			l = w['raw']
