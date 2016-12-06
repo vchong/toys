@@ -534,7 +534,7 @@ def do_passwd(args):
 	keyring.set_password(cfg['server'], cfg['username'], getpass.getpass())
 
 def do_piechart(args):
-	full_year_since = args.until.replace(year=args.until.year - 1)
+	full_year_since = args.until.replace(year=args.until.year - 1) + datetime.timedelta(minutes=1)
 
 	since = args.since.strftime("%Y-%m-%d")
 	until = args.until.strftime("%Y-%m-%d")
