@@ -624,12 +624,14 @@ def do_piechart(args):
 	labels = sorted(by_month_by_member.keys())
 
 	plots = []
+	bottom = [0 for l in labels]
 	for m in members:
 		values = [ by_month_by_member[l][m] for l in labels ]
-		plots.append(plt.bar(left, values, width, color=get_colour(m)))
+		plots.append(plt.bar(left, values, width, bottom=bottom, color=get_colour(m)))
+		bottom = [sum(x) for x in zip(bottom, values)]
 
-	plt.ylabel('Effort')
-	plt.xlabel('Effort by month and member')
+	plt.ylabel('Effort (hours)')
+	#plt.xlabel('Effort by month and member')
 	plt.title('Effort by month and member')
 	plt.xticks([ x+0.5 for x in range(len(by_month_by_member)) ], labels, rotation=90)
 	lgd = plt.legend(plots, members, bbox_to_anchor=(1.05, 1), loc=2)
