@@ -321,7 +321,12 @@ def get_count_by_category(tickets):
 
 	unknown = set()
 	globs = ( 'android', 'board', 'kernel', 'power', 'graphics', 'lava', 'qemu', 'toolchain', 'security', 'distros', '96boards', 'home', 'networking' )
-	nonglobs = set(('socionext', 'spam', 'arm', 'closed_by_merge', 'community', 'eng_escalate', 'hisi', 'huawei', 'internal_linaro', 'launchpad', 'level_0', 'level_1', 'level_2', 'level_3', 'linaro', 'open', 'other', 'probe', 'questions_issues_on_releases', 'release', 'releases.linaro.org', 'segment_group', 'spreadtrum', 'support', 'team', 'ti', 'advantech', 'broadcom', 'contact_us', 'defect_created', 'development_platforms', 'embedded_applications', 'general_support', 'getting_involved', 'gts', 'juno', 'landing_team', 'level_4', 'linaro_enterprise_group', 'membership', 'new', 'page', 'panda', 'qa_lava_test_scripts', 'qualcomm', 'qualcomm_stp', 'sample', 'samsung', 'sharp_zarus_sl5500', 'staging_vexpress_a9', 'v_fav', 'vicky_test', 'video_condecs', 'zd_test', 'zendesk'))
+	nonglobs = set(('socionext', 'spam', 'arm', 'closed_by_merge',
+            'community', 'eng_escalate', 'hisi', 'huawei',
+            'internal_linaro', 'launchpad', 'level_0', 'level_1',
+            'level_2', 'level_3', 'lge', 'linaro', 'open', 'other',
+            'probe', 'questions_issues_on_releases', 'release',
+            'releases.linaro.org', 'microsoft', 'segment_group', 'spreadtrum', 'support', 'team', 'ti', 'advantech', 'broadcom', 'contact_us', 'defect_created', 'development_platforms', 'embedded_applications', 'general_support', 'getting_involved', 'gts', 'juno', 'landing_team', 'level_4', 'linaro_enterprise_group', 'membership', 'new', 'page', 'panda', 'qa_lava_test_scripts', 'qualcomm', 'qualcomm_stp', 'sample', 'samsung', 'sharp_zarus_sl5500', 'staging_vexpress_a9', 'v_fav', 'vicky_test', 'video_condecs', 'zd_test', 'zendesk'))
 
 	count = collections.defaultdict(int)
 	for t in tickets:
