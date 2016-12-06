@@ -407,6 +407,10 @@ def do_days(args):
 
 		print('"LDTS-{:04d}",{}'.format(t['id'], days.days+1))
 
+def do_dump(args):
+	with open(args.db) as f:
+		sys.stdout.write(f.read())
+
 def do_fetch(args):
 	since = parse_date(args.since)
 	until = parse_date(args.until)
@@ -435,6 +439,10 @@ def do_filter(args):
 	data = Ticket.loads(sys.stdin.read())
 
 	data = [ t for t in data if t.is_within_date(since, until) ]
+
+	if args.updated_before:
+		before = parse_date(args.updated_before)
+		data = [ t for t in data if t.updated_at() < before ]
 
 	if args.assignee:
 		data = [t for t in data 
@@ -538,6 +546,38 @@ def do_passwd(args):
 	print("         Zendesk password to use this tool.")
 	keyring.set_password(cfg['server'], cfg['username'], getpass.getpass())
 
+def do_pull(args):
+	with open(args.db) as f:
+		tickets = Ticket.loads(f.read())
+
+	# Find the most recent update and prepare tickets for easy update
+	since = tickets[0].updated_at()
+	db = {}
+	for t in tickets:
+		d = t.updated_at()
+		if d > since:
+			since = d
+		db[t['id']] = t
+
+	new_tickets = Ticket.fetch(since, None)
+	for t in new_tickets:
+		if t['id'] not in db:
+			db[t['id']] = t
+			continue
+
+		old = db[t['id']]
+		if old.updated_at() < t.updated_at():
+			db[t['id']] = t
+
+	# Reconstruct tickets and save it
+	tickets = [ db[k] for k in sorted(db.keys()) ]
+
+	if args.pipe:
+		json.dump(tickets, sys.stdout)
+
+	with open(args.db, 'w') as f:
+		json.dump(tickets, f)
+
 def do_tags(args):
 	tickets = Ticket.loads(sys.stdin.read())
 
@@ -572,6 +612,8 @@ def do_weekly(args):
 		wrap(h)
 
 def main(argv):
+	defaultdb=os.path.dirname(os.path.realpath(sys.argv[0])) + '/../zendesk.db'
+
 	parser = argparse.ArgumentParser()
 	subparsers = parser.add_subparsers(dest='sub-command')
 	subparsers.required = True	# Can't be set using named arguments (yet)
@@ -589,6 +631,11 @@ def main(argv):
 
 	s = subparsers.add_parser('days')
 	s.set_defaults(func=do_days)
+
+	s = subparsers.add_parser('dump')
+	s.add_argument('--db', default=defaultdb,
+		       help="File to update")
+	s.set_defaults(func=do_dump)
 
 	s = subparsers.add_parser('fetch')
 	s.add_argument("--since", default="2012-01-01",
@@ -610,6 +657,8 @@ def main(argv):
 	s.add_argument("--member", action='store_true')
 	s.add_argument("--strict", action='store_true')
 	s.add_argument("--tags")
+	s.add_argument("--updated-before", default=None,
+		       help="Mostly only useful for testing 'pull'")
 	s.set_defaults(func=do_filter)
 
 	s = subparsers.add_parser("format")
@@ -635,6 +684,13 @@ def main(argv):
 	s.add_argument("--title", default=None,
 			help="Title of the graph")
 	s.set_defaults(func=do_piechart)
+
+	s = subparsers.add_parser('pull')
+	s.add_argument('--db', default=defaultdb,
+		       help="File to update")
+	s.add_argument('--pipe', action='store_true',
+		       help="Duplicate output on stdout")
+	s.set_defaults(func=do_pull)
 
 	s = subparsers.add_parser('summary')
 	s.set_defaults(func=do_format,
