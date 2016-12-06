@@ -322,6 +322,10 @@ def do_monthly(args):
 		print('</ul></td></tr>')
 	print('</table>')
 
+def add_percent_labels(labels, values):
+	total = sum(values)
+	return [ '{} ({:1.1f}%)'.format(l, 100 * (v / total)) for l, v in zip(labels, values) ]
+
 def do_piechart(args):
 	count = get_count_by_topic(json.loads(sys.stdin.read()))
 
@@ -330,7 +334,7 @@ def do_piechart(args):
 	colours = [ get_colour(k) for k in labels ]
 
 	patches, texts = plt.pie(counts, colors=colours, startangle=90)
-	plt.legend(patches, labels, loc="best")
+	plt.legend(patches, add_percent_labels(labels, counts), loc="best")
 	plt.axis('equal')
 	if args.title:
 		plt.suptitle(args.title, fontsize=14)
