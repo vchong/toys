@@ -596,14 +596,10 @@ def do_piechart(args):
 	     'effort_per_member-full_year.png', by_member, 'effort')
 
 	by_component = summarize(Issue.get_component, age=(args.since, args.until))
-	plot('PSE card summary by category ({} to {})'.format(since, until),
-	     'cards_by_category.png', by_component, 'count')
 	plot('PSE effort summary by category ({} to {})'.format(since, until),
 	     'effort_by_category.png', by_component, 'effort')
 
 	by_component = summarize(Issue.get_component, age=(full_year_since, args.until))
-	plot('PSE card summary by category ({} to {})'.format(fys, until),
-	     'cards_by_category-full_year.png'.format(full_year_since.year), by_component, 'count')
 	plot('PSE effort summary by category ({} to {})'.format(fys, until),
 	     'effort_by_category-full_year.png'.format(full_year_since.year), by_component, 'effort')
 
