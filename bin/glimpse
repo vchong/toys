@@ -90,6 +90,56 @@ def get_colour(s):
 
 	return '#{}'.format(hashlib.md5(str(s).encode('UTF-8')).hexdigest()[-6:])
 
+def collect_by(things, categorize):
+	results = collections.defaultdict(list)
+	for t in things:
+		results[categorize(t)].append(t)
+	return results
+
+def collect_and_count_by(things, categorize, count=lambda t: 1):
+	results = collections.defaultdict(int)
+	for t in things:
+		results[categorize(t)] += count(t)
+	return results
+
+def stacked_bar_chart(things, filename, title=None, xlabel=None, ylabel=None):
+	x_labels = sorted(things.keys())
+
+	legend_labels = set()
+	for y in things.values():
+		legend_labels |= set(y.keys())
+	legend_labels = sorted(legend_labels)
+
+	plots = []
+	left = range(len(x_labels))
+
+	# Working in reverse order allows us to stack things so that the
+	# (alphabetic) legend is geometrically consistant with the stacks
+	# on the charts.
+	cumulative_height = [ 0 for x in x_labels ]
+	for y in sorted(legend_labels, reverse=True):
+		values = [ things[x][y] for x in x_labels ]
+		plots.append(plt.bar(left, values, 1,
+			bottom=cumulative_height, color=get_colour(y)))
+		cumulative_height = [ c+v for c, v in zip(cumulative_height,
+							  values) ]
+
+	# Now we must reverse plots in order to match it back up with the
+	# legend labels
+	plots.reverse()
+
+	if title:
+		plt.title(title)
+	if xlabel:
+		plt.xlabel(xlabel)
+	if ylabel:
+		plt.ylabel(ylabel)
+
+	plt.xticks([ x+0.5 for x in left ], x_labels, rotation=90)
+	lgd = plt.legend(plots, legend_labels, bbox_to_anchor=(1.05, 1), loc=2)
+	plt.savefig(filename, bbox_extra_artists=(lgd,), bbox_inches='tight')
+	plt.close()
+
 component_aliases = {
 	'Android-upstreaming' : 'Linaro'
 }
@@ -614,42 +664,15 @@ def do_piechart(args):
 			w['epic'] = c.key
 		by_worklog += worklog
 
-	by_month = collections.defaultdict(list)
-	for w in by_worklog:
-		d = w['date']
-		by_month['{:04d}-{:02d}'.format(d.year, d.month)].append(w)
-
-	by_month_by_member = dict(by_month)
+	by_month_by_member = collect_by(by_worklog, lambda w: w['date'].strftime('%Y-%m'))
 	for month in by_month_by_member.keys():
-		effort = collections.defaultdict(int)
-		for l in by_month_by_member[month]:
-			member = report.cards[l['epic']].get_member()
-			effort[member] += l['effort']
-		by_month_by_member[month] = effort
-
-	members = set()
-	for month in by_month_by_member.values():
-		members |= set(month.keys())
-	members = sorted(members)
-
-	width = 1
-	left = [ x+(1-width)/2 for x in range(len(by_month_by_member)) ]
-	labels = sorted(by_month_by_member.keys())
-
-	plots = []
-	bottom = [0 for l in labels]
-	for m in members:
-		values = [ by_month_by_member[l][m] for l in labels ]
-		plots.append(plt.bar(left, values, width, bottom=bottom, color=get_colour(m)))
-		bottom = [sum(x) for x in zip(bottom, values)]
-
-	plt.ylabel('Effort (hours)')
-	#plt.xlabel('Effort by month and member')
-	plt.title('Effort by month and member')
-	plt.xticks([ x+0.5 for x in range(len(by_month_by_member)) ], labels, rotation=90)
-	lgd = plt.legend(plots, members, bbox_to_anchor=(1.05, 1), loc=2)
-	plt.savefig('effort_by_month_and_member.png', bbox_extra_artists=(lgd,), bbox_inches='tight')
-	plt.close()
+		by_month_by_member[month] = collect_and_count_by(
+				by_month_by_member[month],
+				lambda l: report.cards[l['epic']].get_member(),
+				lambda l: l['effort'])
+	stacked_bar_chart(by_month_by_member, 'effort_by_month_and_member.png',
+			title = 'Tickets by month and member',
+			ylabel = 'Number of tickets')
 
 	### Total count of cards
 
