@@ -155,6 +155,75 @@ class Ticket(dict):
 	def assignee(self, field):
 		return self._safe_get_string_field('assignee', field)
 
+	def category(self):
+		hacks = {
+			'11.12_android': 'android',
+			'64-bit': 'kernel',
+			'android_lmg': 'android',
+			'big.little': 'kernel',
+			'board_support': 'board',
+			'eglibc' : 'toolchain',
+			'home_lhg': 'home',
+			'kernel_kwg': 'kernel',
+			'linaro_lsk': 'kernel',
+			'lava_infrastrucure': 'lava',
+			'toolchain_tcwg': 'toolchain',
+			'qemu_vritualization': 'qemu',
+			'networking_lng': 'networking',
+			'open_embedded_oe': 'distros',
+			'open_embedded': 'distros',
+			'ubuntu': 'distros',
+			'power_management_pmwg': 'power',
+			'power_management': 'power',
+			'eas': 'power',
+			'security_swg': 'security',
+		}
+
+		# This is an ordered list of categories into which to file
+		# this ticket. It will be assigned the first category found.
+		globs = (
+			'android', 'board', 'kernel', 'power',
+		        'graphics', 'lava', 'qemu', 'toolchain',
+			'security', 'distros', '96boards', 'home',
+			'networking' )
+
+		tags = [ hacks[x] if x in hacks else x for x in self['tags'] ]
+		for g in globs:
+			if g in tags:
+				return g
+
+		# This is a lists of tags that do *not* categorise a ticket.
+		# It is used only to issue warnings (so we can detect any
+		# new categories that may be created in the future and issue
+		# a warning).
+		nonglobs = set((
+			'socionext', 'spam', 'arm', 'closed_by_merge',
+			'community', 'eng_escalate', 'hisi', 'huawei',
+			'internal_linaro', 'launchpad', 'level_0', 'level_1',
+			'level_2', 'level_3', 'lge', 'linaro', 'open', 'other',
+			'probe', 'questions_issues_on_releases', 'release',
+			'releases.linaro.org', 'microsoft', 'segment_group',
+			'spreadtrum', 'support', 'team', 'ti', 'advantech',
+			'broadcom', 'contact_us', 'defect_created',
+			'development_platforms', 'embedded_applications',
+			'general_support', 'getting_involved', 'gts', 'juno',
+			'landing_team', 'level_4', 'linaro_enterprise_group',
+			'membership', 'new', 'page', 'panda',
+			'qa_lava_test_scripts', 'qualcomm', 'qualcomm_stp',
+			'sample', 'samsung', 'sharp_zarus_sl5500',
+			'staging_vexpress_a9', 'v_fav', 'vicky_test',
+			'video_condecs', 'zd_test', 'zendesk'))
+
+		unknown = set(tags) - nonglobs
+		if len(unknown):
+			print("WARNING: {} has unexpected tags {}".format(
+				self.id(), sorted(unknown)), file=sys.stderr)
+		elif False: # Make True for verbose diagnostics
+			print("WARNING: {} cannot be categorized using {}".format(
+				self.id(), self['tags']), file=sys.stderr)
+
+		return "unknown"	
+
 	def created_at(self):
 		return iso8601.parse_date(self['created_at'])
 
@@ -292,60 +361,10 @@ def get_count_by_month(tickets):
 	return count
 
 def get_count_by_category(tickets):
-	hacks = {
-		'11.12_android': 'android',
-		'64-bit': 'kernel',
-		'android_lmg': 'android',
-		'big.little': 'kernel',
-		'board_support': 'board', 
-		'eglibc' : 'toolchain',
-		'home_lhg': 'home',
-		'kernel_kwg': 'kernel',
-		'linaro_lsk': 'kernel',
-		'lava_infrastrucure': 'lava',
-		'toolchain_tcwg': 'toolchain',
-		'qemu_vritualization': 'qemu',
-		'networking_lng': 'networking',
-		'open_embedded_oe': 'distros',
-		'open_embedded': 'distros',
-		'ubuntu': 'distros',
-		'power_management_pmwg': 'power',
-		'power_management': 'power',
-		'eas': 'power',
-		'security_swg': 'security',
-	}
-	def hack(x):
-		if x in hacks:
-			return hacks[x]
-		return x
-
-	unknown = set()
-	globs = ( 'android', 'board', 'kernel', 'power', 'graphics', 'lava', 'qemu', 'toolchain', 'security', 'distros', '96boards', 'home', 'networking' )
-	nonglobs = set(('socionext', 'spam', 'arm', 'closed_by_merge',
-            'community', 'eng_escalate', 'hisi', 'huawei',
-            'internal_linaro', 'launchpad', 'level_0', 'level_1',
-            'level_2', 'level_3', 'lge', 'linaro', 'open', 'other',
-            'probe', 'questions_issues_on_releases', 'release',
-            'releases.linaro.org', 'microsoft', 'segment_group', 'spreadtrum', 'support', 'team', 'ti', 'advantech', 'broadcom', 'contact_us', 'defect_created', 'development_platforms', 'embedded_applications', 'general_support', 'getting_involved', 'gts', 'juno', 'landing_team', 'level_4', 'linaro_enterprise_group', 'membership', 'new', 'page', 'panda', 'qa_lava_test_scripts', 'qualcomm', 'qualcomm_stp', 'sample', 'samsung', 'sharp_zarus_sl5500', 'staging_vexpress_a9', 'v_fav', 'vicky_test', 'video_condecs', 'zd_test', 'zendesk'))
-
 	count = collections.defaultdict(int)
 	for t in tickets:
-		t['tags'] = [ hack(x) for x in t['tags'] ]
-
-		found = None
-		for g in globs:
-			if g in t['tags']:
-				if g in hacks:
-					g = hacks[g]
-				count[g] += 1
-				found = g
-				break
-
-		if not found:
-			unknown |= set(t['tags']) - nonglobs
-
-	if len(unknown):
-		print("WARNING: Unexpected tags: {}".format(sorted(unknown)))
+		count[t.category()] += 1
+	del count['unknown']
 	return count
 
 def do_count(args):
