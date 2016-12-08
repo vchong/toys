@@ -402,27 +402,6 @@ def get_colour(s):
 
 	return '#{}'.format(hashlib.md5(str(s).encode('UTF-8')).hexdigest()[-6:])
 
-def do_piechart(args):
-	tickets = Ticket.loads(sys.stdin.read())
-	count = None
-
-	if args.by_member:
-		count = get_count_by_member(tickets)
-	else:
-		count = get_count_by_category(tickets)
-
-	labels = [ k for k in sorted(count.keys()) ]
-	counts = [ count[k] for k in labels ]
-	colours = [ get_colour(k) for k in labels ]
-
-	patches, texts = plt.pie(counts, colors=colours, startangle=90)
-	plt.legend(patches, add_percent_labels(labels, counts), loc="best")
-	plt.axis('equal')
-	if args.title:
-		plt.suptitle(args.title, fontsize=14)
-	plt.savefig(args.output)
-	plt.close()
-
 def do_days(args):
 	for t in Ticket.loads(sys.stdin.read()):
 		created_at = iso8601.parse_date(t['created_at'])
@@ -569,6 +548,27 @@ def do_passwd(args):
 	print("WARNING: This is *not* your Google password. You have to set a")
 	print("         Zendesk password to use this tool.")
 	keyring.set_password(cfg['server'], cfg['username'], getpass.getpass())
+
+def do_piechart(args):
+	tickets = Ticket.loads(sys.stdin.read())
+	count = None
+
+	if args.by_member:
+		count = get_count_by_member(tickets)
+	else:
+		count = get_count_by_category(tickets)
+
+	labels = [ k for k in sorted(count.keys()) ]
+	counts = [ count[k] for k in labels ]
+	colours = [ get_colour(k) for k in labels ]
+
+	patches, texts = plt.pie(counts, colors=colours, startangle=90)
+	plt.legend(patches, add_percent_labels(labels, counts), loc="best")
+	plt.axis('equal')
+	if args.title:
+		plt.suptitle(args.title, fontsize=14)
+	plt.savefig(args.output)
+	plt.close()
 
 def do_pull(args):
 	with open(args.db) as f:
