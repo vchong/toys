@@ -72,6 +72,56 @@ def get_colour(s):
 
 	return '#{}'.format(hashlib.md5(str(s).encode('UTF-8')).hexdigest()[-6:])
 
+def collect_by(things, categorize):
+	results = collections.defaultdict(list)
+	for t in things:
+		results[categorize(t)].append(t)
+	return results
+
+def collect_and_count_by(things, categorize, count=lambda t: 1):
+	results = collections.defaultdict(int)
+	for t in things:
+		results[categorize(t)] += count(t)
+	return results
+
+def stacked_bar_chart(things, filename, title=None, xlabel=None, ylabel=None):
+	x_labels = sorted(things.keys())
+
+	legend_labels = set()
+	for y in things.values():
+		legend_labels |= set(y.keys())
+	legend_labels = sorted(legend_labels)
+
+	plots = []
+	left = range(len(x_labels))
+
+	# Working in reverse order allows us to stack things so that the
+	# (alphabetic) legend is geometrically consistant with the stacks
+	# on the charts.
+	cumulative_height = [ 0 for x in x_labels ]
+	for y in sorted(legend_labels, reverse=True):
+		values = [ things[x][y] for x in x_labels ]
+		plots.append(plt.bar(left, values, 1,
+			bottom=cumulative_height, color=get_colour(y)))
+		cumulative_height = [ c+v for c, v in zip(cumulative_height,
+							  values) ]
+
+	# Now we must reverse plots in order to match it back up with the
+	# legend labels
+	plots.reverse()
+
+	if title:
+		plt.title(title)
+	if xlabel:
+		plt.xlabel(xlabel)
+	if ylabel:
+		plt.ylabel(ylabel)
+
+	plt.xticks([ x+0.5 for x in left ], x_labels, rotation=90)
+	lgd = plt.legend(plots, legend_labels, bbox_to_anchor=(1.05, 1), loc=2)
+	plt.savefig(filename, bbox_extra_artists=(lgd,), bbox_inches='tight')
+	plt.close()
+
 def parse_date(s, end_of_day=False):
 	'''Convert a string to a datetime object.
 
@@ -174,43 +224,17 @@ def get_count_by_month(posts):
 def do_chart(args):
 	posts = json.loads(sys.stdin.read())
 
-	by_month = collections.defaultdict(list)
-	for p in posts:
-		d = iso8601.parse_date(p['date'])
-		by_month['{:04d}-{:02d}'.format(d.year, d.month)].append(p)
+	by_month_by_topic = collect_by(posts,
+                lambda p: iso8601.parse_date(p['date']).strftime('%Y-%m'))
 
-	by_month_by_topic = dict(by_month)
 	for month in by_month_by_topic.keys():
-		count = collections.defaultdict(int)
-		for p in by_month_by_topic[month]:
-			#topic = '/'.join(p['topic'])
-			topic = p['topic'][-1]
-			count[topic] += 1
-		by_month_by_topic[month] = count
+		by_month_by_topic[month] = collect_and_count_by(
+				by_month_by_topic[month],
+				lambda p: p['topic'][-1])
 
-	topics = set()
-	for month in by_month_by_topic.values():
-		topics |= set(month.keys())
-	topics = sorted(topics)
-
-	width = 1
-	left = [ x+(1-width)/2 for x in range(len(by_month_by_topic)) ]
-	labels = sorted(by_month_by_topic.keys())
-
-	plots = []
-	bottom = [0 for l in labels]
-	for m in topics:
-		values = [ by_month_by_topic[l][m] for l in labels ]
-		plots.append(plt.bar(left, values, width, bottom=bottom, color=get_colour(m)))
-		bottom = [sum(x) for x in zip(bottom, values)]
-
-	plt.ylabel('Number of posts')
-	#plt.xlabel('Posts by month and topic')
-	plt.title('Posts by month and topic')
-	plt.xticks([ x+0.5 for x in range(len(by_month_by_topic)) ], labels, rotation=90)
-	lgd = plt.legend(plots, topics, bbox_to_anchor=(1.05, 1), loc=2)
-	plt.savefig(args.output, bbox_extra_artists=(lgd,), bbox_inches='tight')
-	plt.close()
+	stacked_bar_chart(by_month_by_topic, args.output,
+			title = 'Posts by month and topic',
+			ylabel = 'Number of posts')
 
 def do_count(args):
 	print(len(json.loads(sys.stdin.read())))
