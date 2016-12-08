@@ -122,6 +122,56 @@ def get_config():
 
 	return cfg
 
+def collect_by(things, categorize):
+	results = collections.defaultdict(list)
+	for t in things:
+		results[categorize(t)].append(t)
+	return results
+
+def collect_and_count_by(things, categorize, count=lambda t: 1):
+	results = collections.defaultdict(int)
+	for t in things:
+		results[categorize(t)] += count(t)
+	return results
+
+def stacked_bar_chart(things, filename, title=None, xlabel=None, ylabel=None):
+	x_labels = sorted(things.keys())
+
+	legend_labels = set()
+	for y in things.values():
+		legend_labels |= set(y.keys())
+	legend_labels = sorted(legend_labels)
+
+	plots = []
+	left = range(len(x_labels))
+
+	# Working in reverse order allows us to stack things so that the
+	# (alphabetic) legend is geometrically consistant with the stacks
+	# on the charts.
+	cumulative_height = [ 0 for x in x_labels ]
+	for y in sorted(legend_labels, reverse=True):
+		values = [ things[x][y] for x in x_labels ]
+		plots.append(plt.bar(left, values, 1,
+			bottom=cumulative_height, color=get_colour(y)))
+		cumulative_height = [ c+v for c, v in zip(cumulative_height,
+							  values) ]
+
+	# Now we must reverse plots in order to match it back up with the
+	# legend labels
+	plots.reverse()
+
+	if title:
+		plt.title(title)
+	if xlabel:
+		plt.xlabel(xlabel)
+	if ylabel:
+		plt.ylabel(ylabel)
+
+	plt.xticks([ x+0.5 for x in left ], x_labels, rotation=90)
+	lgd = plt.legend(plots, legend_labels, bbox_to_anchor=(1.05, 1), loc=2)
+	plt.savefig(filename, bbox_extra_artists=(lgd,), bbox_inches='tight')
+	plt.close()
+
 def parse_date(s, end_of_day=False):
 	'''Convert a string to a datetime object.
 
@@ -240,16 +290,22 @@ class Ticket(dict):
 			# (and therefore not sub-scriptable)
 			return ''
 
-	def orgname(self):
+	def orgname(self, reduce_namespace=False):
 		org = self.organization('name')
 		if not org:
 			return 'Community'
+
+		if reduce_namespace and 'qualcomm_stp' in self['tags']:
+			return 'Qualcomm'
 
 		if org == "Segment_Group":
 			email = self['requester']['email']
 			org = email.split('@', maxsplit=1)[1]
 			if org.count('.') == 1 and org.endswith('.com'):
 				org = org[:-4].capitalize()
+
+			if reduce_namespace:
+				org = "Group member"
 
 		return org
 
@@ -366,6 +422,22 @@ def get_count_by_category(tickets):
 		count[t.category()] += 1
 	del count['unknown']
 	return count
+
+def do_chart(args):
+	tickets = Ticket.loads(sys.stdin.read())
+
+	if args.by_category:
+		seive = lambda t: t.category()
+	else:
+		seive = lambda t: t.orgname(reduce_namespace=True)
+
+	data = collect_by(tickets, lambda t: t.created_at().strftime('%Y-%m'))
+	for month in data.keys():
+		data[month] = collect_and_count_by(data[month], seive)
+
+	stacked_bar_chart(data, args.output,
+			title = 'Tickets by month and member',
+			ylabel = 'Number of tickets')
 
 def do_count(args):
 	tickets = Ticket.loads(sys.stdin.read())
@@ -641,6 +713,11 @@ def main(argv):
 	parser = argparse.ArgumentParser()
 	subparsers = parser.add_subparsers(dest='sub-command')
 	subparsers.required = True	# Can't be set using named arguments (yet)
+
+	s = subparsers.add_parser('chart')
+	s.add_argument('--by-category', action='store_true')
+	s.add_argument("--output", default="ldtstool.png")
+	s.set_defaults(func=do_chart)
 
 	s = subparsers.add_parser('count')
 	s.add_argument('--by-member', action='store_true')
