@@ -31,12 +31,12 @@ cd $SSE_DATA_DIR
 #
 
 printf "Generating solutions engineering report ..."
-[ -e monthly.html ] || \
-    glimpse monthly --fully-automatic --since "$since" --until "$until" > monthly.html 2> monthly.errlog
-sed -i -e '/^<\/*html>$/d' -e '/^<\/*head>$/d' -e '/^<title>/d' -e '/^<\/*body>/d' monthly.html
+[ -e tmp/monthly.html ] || \
+    glimpse monthly --fully-automatic --since "$since" --until "$until" > tmp/monthly.html 2> tmp/monthly.errlog
+sed -i -e '/^<\/*html>$/d' -e '/^<\/*head>$/d' -e '/^<title>/d' -e '/^<\/*body>/d' tmp/monthly.html
 printf " done\nGenerating solutions engineering graphs ..."
-[ -e piechart.errlog ] || \
-    glimpse piechart --since "$since" --until "$until" 2> piechart.errlog
+[ -e tmp/piechart.errlog ] || \
+    glimpse piechart --since "$since" --until "$until" 2> tmp/piechart.errlog
 printf " done\n"
 
 #
@@ -44,21 +44,52 @@ printf " done\n"
 #
 
 printf "Grabbing LDTS monthly activity ..."
-[ -e ldts-month.json ] || \
-    ldtstool fetch --since "$since" > ldts-month.json
+[ -e tmp/ldtstool-pull.errlog ] || \
+    ldtstool pull 2> tmp/ldtstool-pull.errlog
 printf " done\n"
 
-printf "Generating LDTS activity graphs ..."
-cat ldts-month.json | ldtstool filter --until "$until" | \
-	ldtstool piechart --by-member --output "ldts-by_member.png"
-cat ldts-month.json | ldtstool filter --until "$until" | \
-	ldtstool piechart --by-category --output "ldts-by_category.png"
+printf "Generating LDTS activity graphs ."
+
+ldtstool dump | ldtstool filter --restrict created --member \
+		--since "$full_year_since" --until "$until" | \
+ldtstool chart --output "ldts-by_month_by_member.png"
+printf "."
+
+ldtstool dump | ldtstool filter --restrict created --member \
+		--since "$since" --until "$until" | \
+ldtstool piechart --by-member --output "ldts-by_member.png"
+printf "."
+
+ldtstool dump | ldtstool filter --restrict created --member \
+		--since "$full_year_since" --until "$until" | \
+ldtstool piechart --by-member --output "ldts-by_member-full_year.png"
+printf "."
+
+ldtstool dump | ldtstool filter --restrict created --member \
+		--since "$full_year_since" --until "$until" | \
+ldtstool chart --by-category --output "ldts-by_month_by_category.png"
+printf "."
+
+ldtstool dump | ldtstool filter --restrict created --member \
+		--since "$since" --until "$until" | \
+ldtstool piechart --by-category --output "ldts-by_category.png"
+printf "."
+
+ldtstool dump | ldtstool filter --restrict created --member \
+		--since "$full_year_since" --until "$until" | \
+	ldtstool piechart --by-category --output "ldts-by_category-full_year.png"
+printf "."
+
+ldtstool dump | ldtstool filter --restrict created --community \
+		--since "$full_year_since" --until "$until" | \
+ldtstool chart --by-category --output "community-by_month_by_category.png"
+printf "."
+
 printf " done\n"
 
 printf "Generating LDTS activity report ..."
-#cat ldts-month.json | ldtstool filter --until "$until" | ldtstool markdown > ldts.md
-#cmark ldts.md > ldts.html
-cat ldts-month.json | ldtstool filter --until "$until" | ldtstool monthly > ldts.html
+ldtstool dump | ldtstool filter --since "$since" --until "$until" | \
+	ldtstool monthly > tmp/ldts.html
 printf " done\n"
 
 #
@@ -68,20 +99,20 @@ printf " done\n"
 for i in danielt ldts ldts-atsuka leo-yan vchong
 do
 	printf "Grabbing 96Boards data for $i ."
-	[ -e 96b-$i.json ] || \
-	    96btool fetch --nick $i --since "$full_year_since" --show-progress > 96b-$i.json
-	printf " %d posts\n" `cat 96b-$i.json | 96btool filter --since "$since" --until "$until" | 96btool count`
+	[ -e tmp/96b-$i.json ] || \
+	    96btool fetch --nick $i --since "$full_year_since" --show-progress > tmp/96b-$i.json
+	printf " %d posts\n" `cat tmp/96b-$i.json | 96btool filter --since "$since" --until "$until" | 96btool count`
 done
 
 printf "Generating 96boards activity report ..."
-cat 96b-*.json | 96btool merge | 96btool filter --until "$until" > 96boards.json
-cat 96boards.json | 96btool filter --since "$since" | 96btool monthly > 96boards.html
+cat tmp/96b-*.json | 96btool merge | 96btool filter --until "$until" > tmp/96boards.json
+cat tmp/96boards.json | 96btool filter --since "$since" | 96btool monthly > tmp/96boards.html
 printf " done\n"
 
 printf "Generating 96boards activity graphs ..."
-cat 96boards.json | 96btool chart --output 96b_by_month.png
-cat 96boards.json | 96btool piechart --output 96b_pie_of_the_year.png
-cat 96boards.json | 96btool filter --since "$since" | 96btool piechart --output 96b_pie_of_the_month.png
+cat tmp/96boards.json | 96btool chart --output 96b_by_month.png
+cat tmp/96boards.json | 96btool piechart --output 96b_pie_of_the_year.png
+cat tmp/96boards.json | 96btool filter --since "$since" | 96btool piechart --output 96b_pie_of_the_month.png
 printf " done\n"
 
 #
@@ -120,7 +151,7 @@ cat > monthly_report.html <<EOF
   </tr>
 </table></p>
 
-<p>Figure 1.2 shows the new issues vs completed issues tackled by the SSE
+<p>Figure 1.1 shows the new issues vs completed issues tackled by the SSE
 team during the previous months. Each card represents a unit of work
 that is visible to a member. Figures 1.2 and 1.3 show the cards that
 have been worked on this month which members the work was for. None of
@@ -152,10 +183,10 @@ team. Figure 1.5 zooms in on the final column of the bar chart and
 offers a more detailed breakdown whilst figure 1.6 provides a full-year
 breakdown as a contrast.</p>
 
-<!-- <p><table>
-  <tr><td><img src="effort_by_month_and_member.png"></td></tr>
-  <tr><td><strong>Figure 1.7</strong>: Effort summary organised by month and by member</td></tr>
-</table></p> -->
+<p><table>
+  <tr><td><img src="effort_by_month_and_category.png"></td></tr>
+  <tr><td><strong>Figure 1.7</strong>: Effort summary organised by month and by category</td></tr>
+</table></p>
 
 <p><table>
   <tr>
@@ -163,45 +194,60 @@ breakdown as a contrast.</p>
      <td><img src="effort_by_category-full_year.png" width="400" height="300">
   </tr>
   <tr>
-     <td><strong>Figure 1.7</strong>: Effort this month, by category</td>
-     <td><strong>Figure 1.8</strong>: Effort over last 12 months, by category</td>
+     <td><strong>Figure 1.8</strong>: Effort this month, by category</td>
+     <td><strong>Figure 1.9</strong>: Effort over last 12 months, by category</td>
   </tr>
 </table></p>
 
-<img src="effort_by_category-full_year.png" width="400" height="300"></p>
 <p>The chart above show the effort expended this month and contrast it
 with the effort over the last 12 months.</p>
 
 <h2>Support via LDTS</h2>
 
 <p><table>
+<tr><td><img src="ldts-by_month_by_member.png"></td></tr>
+  <tr><td><strong>Figure 2.1</strong>: Member tickets, organised by month and by member</td></tr>
+</table></p>
+
+<p><table>
   <tr>
      <td><img src="ldts-by_member.png" width="400" height="300"></td>
-     <!--<td><img src="ldts-by_member-full_year.png" width="400" height="300"></td>-->
+     <td><img src="ldts-by_member-full_year.png" width="400" height="300"></td>
   </tr>
   <tr>
-     <td><strong>Figure 2.1</strong>: Activity this month, by member</td>
-     <!--<td><strong>Figure 2.3</strong>: Activity this year, by member</td>-->
+     <td><strong>Figure 2.2</strong>: Activity this month, by member</td>
+     <td><strong>Figure 2.3</strong>: Activity this year, by member</td>
   </tr>
 </table></p>
 
 <p>For LDTS there is no effort tracking so we can only monitor ticket
 volumes. The graph above shows the breakdown, by member, of tickets
-this month. A contrasting graph for the full year is not yet available
+this month.
 (Zendesk makes it difficult, but not impossible, to automate).</p>
 
-<p><img src="ldts-by_category.png" width="400" height="300"></p>
+<p><table>
+<tr><td><img src="ldts-by_month_by_category.png"></td></tr>
+  <tr><td><strong>Figure 2.4</strong>: Member tickets, organised by month and by category</td></tr>
+</table></p>
+
+<p><table>
 <p><table>
   <tr>
      <td><img src="ldts-by_category.png" width="400" height="300"></td>
-     <!--<td><img src="ldts-by_category-full_year.png" width="400" height="300"></td>-->
+     <td><img src="ldts-by_category-full_year.png" width="400" height="300"></td>
   </tr>
   <tr>
-     <td><strong>Figure 2.2</strong>: Activity this month, by category</td>
-     <!--<td><strong>Figure 2.6</strong>: Activity this year, by category</td>-->
+     <td><strong>Figure 2.5</strong>: Activity this month, by category</td>
+     <td><strong>Figure 2.6</strong>: Activity this year, by category</td>
   </tr>
 </table></p>
 
+<p><table>
+<tr><td><img src="community-by_month_by_category.png"></td></tr>
+  <tr><td><strong>Figure 2.7</strong>: Community tickets, organised by month and by category</td></tr>
+</table></p>
+
+<p><table>
 <h2>96Boards Support</h2>
 
 <p><table>
@@ -229,15 +275,15 @@ of the SSE team.</p>
 
 <h2>Solutions Engineering</h2>
 
-`cat monthly.html`
+`cat tmp/monthly.html`
 
 <h2>Support via LDTS</h2>
 
-`cat ldts.html`
+`cat tmp/ldts.html`
 
 <h2>96Boards Support</h2>
 
-`cat 96boards.html`
+`cat tmp/96boards.html`
 
 </body>
 </html>
