@@ -682,7 +682,7 @@ def do_piechart(args):
 	for month in by_month_by_cat.keys():
 		by_month_by_cat[month] = collect_and_count_by(
 				by_month_by_cat[month],
-				lambda l: report.cards[l['epic']].categorize(),
+				lambda l: report.cards[l['epic']].get_component(),
 				lambda l: l['effort'])
 	stacked_bar_chart(by_month_by_cat, 'effort_by_month_and_category.png',
 			title = 'Tickets by month and category',
@@ -725,8 +725,6 @@ def do_piechart(args):
 	for c, r in backwards:
 		num_open.insert(0, count)
 		count += r - c
-
-	print ([x for x in zip(labels, created_bys, resolved_bys, num_open)])
 
 	fig, ax = plt.subplots()
 	bar_width = 0.25
