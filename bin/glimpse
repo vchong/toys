@@ -664,6 +664,8 @@ def do_piechart(args):
 			w['epic'] = c.key
 		by_worklog += worklog
 
+	### Effort, by month and by member
+
 	by_month_by_member = collect_by(by_worklog, lambda w: w['date'].strftime('%Y-%m'))
 	for month in by_month_by_member.keys():
 		by_month_by_member[month] = collect_and_count_by(
@@ -672,6 +674,18 @@ def do_piechart(args):
 				lambda l: l['effort'])
 	stacked_bar_chart(by_month_by_member, 'effort_by_month_and_member.png',
 			title = 'Tickets by month and member',
+			ylabel = 'Number of tickets')
+
+	### Effort, by month and by category
+
+	by_month_by_cat = collect_by(by_worklog, lambda w: w['date'].strftime('%Y-%m'))
+	for month in by_month_by_cat.keys():
+		by_month_by_cat[month] = collect_and_count_by(
+				by_month_by_cat[month],
+				lambda l: report.cards[l['epic']].categorize(),
+				lambda l: l['effort'])
+	stacked_bar_chart(by_month_by_cat, 'effort_by_month_and_category.png',
+			title = 'Tickets by month and category',
 			ylabel = 'Number of tickets')
 
 	### Total count of cards
