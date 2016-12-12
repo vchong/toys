@@ -20,10 +20,10 @@ echo
 
 if [ -z $SSE_DATA_DIR ]
 then
-	SSE_DATA_DIR=sse-auto-report.$$
+	SSE_DATA_DIR=reports/`date -d "$until" +"%Y-%m"`
 fi
 
-mkdir -p $SSE_DATA_DIR
+mkdir -p $SSE_DATA_DIR/tmp
 cd $SSE_DATA_DIR
 
 #
