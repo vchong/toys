@@ -404,10 +404,10 @@ class Ticket(dict):
 		tickets = [ Ticket(t) for t in data ]
 		return tickets
 
-def get_count_by_member(tickets):
+def get_count_by_member(tickets, reduce_namespace=False):
 	count = collections.defaultdict(int)
 	for t in tickets:
-		count[t.orgname()] += 1
+		count[t.orgname(reduce_namespace=reduce_namespace)] += 1
 	return count
 
 def get_count_by_month(tickets):
@@ -631,7 +631,7 @@ def do_piechart(args):
 	count = None
 
 	if args.by_member:
-		count = get_count_by_member(tickets)
+		count = get_count_by_member(tickets, reduce_namespace=True)
 	else:
 		count = get_count_by_category(tickets)
 
