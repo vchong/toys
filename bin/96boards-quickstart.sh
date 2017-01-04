@@ -3,11 +3,11 @@
 #
 # 96boards-quickstart.sh
 #
-[ "Usage" = "Copy the following five lines into your shell" ] && \
+[ Usage = "Copy the five lines below (excluding this one) to your shell" ] && \
 read -p "SSID: " ssid && read -sp "Password: " password && \
 nmcli dev wifi connect "$ssid" password "$password" && \
 repo=https://git.linaro.org/people/daniel.thompson/toys.git && \
-wget $repo/blob_plain/HEAD:/bin/96boards-quickstart.sh && \
+wget $repo/plain/bin/96boards-quickstart.sh && \
 bash -x 96boards-quickstart.sh
 
 # This is only temporary...
