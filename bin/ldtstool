@@ -425,7 +425,6 @@ def get_count_by_category(tickets):
 	count = collections.defaultdict(int)
 	for t in tickets:
 		count[t.category()] += 1
-	del count['unknown']
 	return count
 
 def do_chart(args):
