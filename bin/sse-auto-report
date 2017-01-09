@@ -137,7 +137,7 @@ cat > monthly_report.html <<EOF
 
 <p><table>
   <tr><td><img src="card_tracker.png"></td></tr>
-  <tr><td><strong>Figure 1.1</strong>: Summary of cards created and completed over the last 12 months.</td></tr>
+  <tr><td><strong>Figure 1.1</strong>: Summary of issues created and completed over the last 12 months.</td></tr>
 </table></p>
 
 <p><table>
@@ -146,14 +146,14 @@ cat > monthly_report.html <<EOF
      <td><img src="cards_per_member-full_year.png" width="400" height="300"></td>
   </tr>
   <tr>
-     <td><strong>Figure 1.2</strong>: Cards worked on this month</td>
-     <td><strong>Figure 1.3</strong>: Cards worked on over the last 12 months.</td>
+     <td><strong>Figure 1.2</strong>: Issues worked on this month</td>
+     <td><strong>Figure 1.3</strong>: Issues worked on over the last 12 months.</td>
   </tr>
 </table></p>
 
 <p>Figure 1.1 shows the new issues vs completed issues tackled by the SSE
-team during the previous months. Each card represents a unit of work
-that is visible to a member. Figures 1.2 and 1.3 show the cards that
+team during the previous months. Each issue represents a unit of work
+that is visible to a member. Figures 1.2 and 1.3 show the issues that
 have been worked on this month which members the work was for. None of
 the above graphs indicate the level of effort invested by the team,
 instead they should represent units of work that the member is aware
@@ -199,8 +199,39 @@ breakdown as a contrast.</p>
   </tr>
 </table></p>
 
-<p>The chart above show the effort expended this month and contrast it
-with the effort over the last 12 months.</p>
+<p>The graph and pie charts above show the effort expended this month
+organised by the type of work undertaken and contrasts it with trends
+over the past twelve months. The potential categories include:</p>
+<p>
+
+<p><table>
+  <tr>
+     <td>96Boards</td>
+     <td>Contributions to the 96Boards programme. This category is
+     similar to Engineering works, but is extracted from other types
+     of engineering activity due to its special importance to
+     Linaro.</td>
+  </tr>
+  <tr>
+     <td>BSP Analysis</td>
+     <td>Review of a member's bootloader and kernel.</td>
+  </tr>
+  <tr>
+     <td>Engineering works</td>
+     <td>General engineering effort.</td>
+  </tr>
+  <tr>
+     <td>Training</td>
+     <td>Preparation, review and delivery of training materials.</td>
+  </tr>
+  <tr>
+     <td>Upstream Consultancy</td>
+     <td>Assist members in delivering software upstream. A mixture of
+     pre- and post-release review services, together with occasional
+     engagements to upstream a specific driver.<td>
+  </tr>
+</table></p>
+
 
 <h2>Support via LDTS</h2>
 
@@ -221,9 +252,8 @@ with the effort over the last 12 months.</p>
 </table></p>
 
 <p>For LDTS there is no effort tracking so we can only monitor ticket
-volumes. The graph above shows the breakdown, by member, of tickets
-this month.
-(Zendesk makes it difficult, but not impossible, to automate).</p>
+volumes. The three graph above shows the breakdown, by member, of
+tickets over the last twelve months.</p>
 
 <p><table>
 <tr><td><img src="ldts-by_month_by_category.png"></td></tr>
@@ -242,10 +272,21 @@ this month.
   </tr>
 </table></p>
 
+The graph (fig 2.4) and piecharts (fig 2.5 & fig 2.6) show the member
+tickets this month. This helps guide us in choosing what skills the team
+must invest in.
+
 <p><table>
 <tr><td><img src="community-by_month_by_category.png"></td></tr>
   <tr><td><strong>Figure 2.7</strong>: Community tickets, organised by month and by category</td></tr>
 </table></p>
+
+<p>Figure 2.7 is of little strategic value to the team because we will not
+invest in staff development based on the topics found in community
+tickets. However, it is included in the report because it offers some
+feedback on the stength of Linaro's community presence. In particular
+the graph shows the signifiance of the Linaro toolchain to our external
+image.</p>
 
 <p><table>
 <h2>96Boards Support</h2>
