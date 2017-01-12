@@ -46,8 +46,17 @@ import subprocess
 import sys
 import os
 import textwrap
+import time
 from lxml import html
 from lxml import etree
+
+# If it's installed we'd rather use IPython for interaction...
+try:
+	import IPython
+	interact = IPython.embed
+except:
+	import pdb
+	interact = pdb.set_trace
 
 # Let's make the plotting tools optional (for those who only use glimpse
 # for their weekly report)
@@ -56,8 +65,20 @@ try:
 except:
 	pass
 
-# Enable caching throughout
-requests_cache.install_cache()
+# Try to enable caching
+try:
+        import requests_cache
+        requests_cache.install_cache()
+except:
+        # Provide a nop implementation
+        class requests_cache:
+                def __enter__(self):
+                        pass
+                def __exit__(self, exception_type, exception_value, traceback):
+                        pass
+                @staticmethod
+                def disabled():
+                        return requests_cache()
 
 def get_colour(s):
 	override = {
@@ -239,6 +260,41 @@ def do_chart(args):
 def do_count(args):
 	print(len(json.loads(sys.stdin.read())))
 
+def do_diffstat(args):
+	diffs = []
+
+	decoder = json.JSONDecoder()
+	s = sys.stdin.read()
+	while s:
+		(d, i) = decoder.raw_decode(s)
+		diffs += [d,]
+		s = s[i:]
+
+	diffstat = diffs[0]
+	for newstat in diffs[1:]:
+		diffstat['startdate'] = diffstat['date']
+		diffstat['enddate'] = newstat['date']
+		del diffstat['date']
+
+		diffstat['topiccount'] = newstat['topiccount'] - diffstat['topiccount']
+		diffstat['replycount'] = newstat['replycount'] - diffstat['replycount']
+
+		by_title = {}
+		for d in newstat['forums'] + newstat['subforums']:
+			by_title[d['title']] = d
+
+		for d in diffstat['forums'] + diffstat['subforums']:
+			if d['title'] not in by_title:
+				d['topiccount'] = -1
+				d['replycount'] = -1
+			else:
+				d['topiccount'] = by_title[d['title']]['topiccount'] - d['topiccount']
+				d['replycount'] = by_title[d['title']]['replycount'] - d['replycount']
+
+		json.dump(diffstat, sys.stdout, indent=2)
+
+		diffstat = newstat
+
 def do_fetch(args):
 	since = parse_date(args.since)
 
@@ -396,15 +452,29 @@ def do_filter(args):
 	json.dump(posts, sys.stdout)
 
 def do_stats(args):
+	if args.loop:
+		delta = datetime.timedelta(seconds=int(args.loop))
+		alarm = datetime.datetime.now() + delta
+		args.loop = None
+		while True:
+			do_stats(args)
+
+			now = datetime.datetime.now()
+			if now < alarm:
+				time.sleep((alarm - now).total_seconds())
+			alarm += delta
+
 	with requests_cache.disabled():
 		page = requests.get('http://www.96boards.org/forums/')
 	if not page.ok:
 		return None
 	tree = html.fromstring(page.content)
 
-	stats = [{'date': datetime.datetime.now().isoformat("T"),
+	now = datetime.datetime.now()
+
+	stats = {'date': now.isoformat("T"),
 		'subforums': [],
-		'forums': []}]
+		'forums': []}
 
 	titles = tree.xpath('//a[@class="bbp-forum-title"]/text()')
 	topiccounts = [ c.strip() for c in
@@ -416,22 +486,29 @@ def do_stats(args):
 			]
 	replycounts = [ int(c.replace(',', '')) for c in replycounts[1::2] ]
 
-	stats[0]['forums'] = [ { 'title': t, 'topiccount': c, 'replycount': r }
+	stats['forums'] = [ { 'title': t, 'topiccount': c, 'replycount': r }
 			for (t, c, r) in zip(titles, topiccounts, replycounts) ]
 
-	stats[0]['topiccount'] = sum(topiccounts)
-	stats[0]['replycount'] = sum(replycounts)
+	stats['topiccount'] = sum(topiccounts)
+	stats['replycount'] = sum(replycounts)
 
 	subforums = tree.xpath('//a[@class="bbp-forum-link"]/text()')
 	for s in subforums:
 		(name, topics, posts) = re.match('(.*)[(]([0-9,]+) ([0-9,]+)[)]', s).groups()
 
-		stats[0]['subforums'].append({
+		stats['subforums'].append({
 			'title': name.strip(),
 			'topiccount': int(topics.replace(',', '')),
 			'replycount': int(posts.replace(',', ''))})
 
-	json.dump(stats, sys.stdout, indent=2)
+	if args.organise:
+		os.makedirs(now.strftime('%Y/%m/%d'), exist_ok=True)
+		with open(now.strftime('%Y/%m/%d/%H:%M:%S.json'), 'w') as f:
+			json.dump(stats, f, indent=2)
+		print('{}{:10}{:10}'.format(stats['date'][0:19],
+				stats['topiccount'], stats['replycount']))
+	else:
+		json.dump(stats, sys.stdout, indent=2)
 
 def do_weekly(args):
 	wrappers = (
@@ -467,6 +544,9 @@ def main(argv):
 	s = subparsers.add_parser('count')
 	s.set_defaults(func=do_count)
 
+	s = subparsers.add_parser('diffstat')
+	s.set_defaults(func=do_diffstat)
+
 	s = subparsers.add_parser('fetch')
 	s.add_argument("--nick", default="danielt",
 		        help="Nickname to fetch replies from");
@@ -500,7 +580,8 @@ def main(argv):
 	s.set_defaults(func=do_filter)
 
 	s = subparsers.add_parser('stats')
-	s.add_argument('--debug', action='store_true')
+	s.add_argument('--loop')
+	s.add_argument('--organise', action='store_true')
 	s.set_defaults(func=do_stats)
 
 	s = subparsers.add_parser('summary')
