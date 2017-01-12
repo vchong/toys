@@ -395,6 +395,44 @@ def do_filter(args):
 
 	json.dump(posts, sys.stdout)
 
+def do_stats(args):
+	with requests_cache.disabled():
+		page = requests.get('http://www.96boards.org/forums/')
+	if not page.ok:
+		return None
+	tree = html.fromstring(page.content)
+
+	stats = [{'date': datetime.datetime.now().isoformat("T"),
+		'subforums': [],
+		'forums': []}]
+
+	titles = tree.xpath('//a[@class="bbp-forum-title"]/text()')
+	topiccounts = [ c.strip() for c in
+			tree.xpath('//li[@class="bbp-forum-topic-count"]/text()')
+			]
+	topiccounts = [ int(c.replace(',', '')) for c in topiccounts[1::2] ]
+	replycounts = [ c.strip() for c in
+			tree.xpath('//li[@class="bbp-forum-reply-count"]/text()')
+			]
+	replycounts = [ int(c.replace(',', '')) for c in replycounts[1::2] ]
+
+	stats[0]['forums'] = [ { 'title': t, 'topiccount': c, 'replycount': r }
+			for (t, c, r) in zip(titles, topiccounts, replycounts) ]
+
+	stats[0]['topiccount'] = sum(topiccounts)
+	stats[0]['replycount'] = sum(replycounts)
+
+	subforums = tree.xpath('//a[@class="bbp-forum-link"]/text()')
+	for s in subforums:
+		(name, topics, posts) = re.match('(.*)[(]([0-9,]+) ([0-9,]+)[)]', s).groups()
+
+		stats[0]['subforums'].append({
+			'title': name.strip(),
+			'topiccount': int(topics.replace(',', '')),
+			'replycount': int(posts.replace(',', ''))})
+
+	json.dump(stats, sys.stdout, indent=2)
+
 def do_weekly(args):
 	wrappers = (
 		textwrap.TextWrapper(),
@@ -460,6 +498,10 @@ def main(argv):
 	s.add_argument("--until", default="tomorrow",
 			help="When to stop gathering information")
 	s.set_defaults(func=do_filter)
+
+	s = subparsers.add_parser('stats')
+	s.add_argument('--debug', action='store_true')
+	s.set_defaults(func=do_stats)
 
 	s = subparsers.add_parser('summary')
 	s.set_defaults(func=do_format,
