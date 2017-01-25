@@ -552,10 +552,13 @@ def do_format(args):
 					val = t.quicklink()
 				elif '-' in field:
 					(field, attr) = field.split('-', 1)
-					val = t[field][attr]
+					if isinstance(t[field], str):
+						val = t[field][0:int(attr)]
+					else:
+						val = t[field][attr]
 				else:
 					val = t[field]
-			except KeyError:
+			except ValueError:
 				continue
 
 			ln = ln.replace(m.group(0), '{{{}}}'.format(fmt).format(val))
@@ -801,7 +804,7 @@ def main(argv):
 
 	s = subparsers.add_parser('summary')
 	s.set_defaults(func=do_format,
-			template="{id}: {subject} ({orgname} - {requester-email})")
+			template="{created_at-10}: {id}: {subject} ({orgname} - {requester-email})")
 
 	s = subparsers.add_parser('tags')
 	s.set_defaults(func=do_tags)
