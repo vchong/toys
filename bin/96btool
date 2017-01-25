@@ -464,16 +464,21 @@ def do_stats(args):
 			alarm += delta
 
 	with requests_cache.disabled():
-		page = requests.get('http://www.96boards.org/forums/')
-	if not page.ok:
+		frontpage = requests.get('http://www.96boards.org/forums/')
+		unreplied = requests.get('http://www.96boards.org/forums/view/no-replies/')
+	if not frontpage.ok:
 		return None
-	tree = html.fromstring(page.content)
 
 	now = datetime.datetime.now()
-
 	stats = {'date': now.isoformat("T"),
 		'subforums': [],
 		'forums': []}
+
+        #
+        # Handle front page
+        #
+
+	tree = html.fromstring(frontpage.content)
 
 	titles = tree.xpath('//a[@class="bbp-forum-title"]/text()')
 	topiccounts = [ c.strip() for c in
@@ -499,6 +504,20 @@ def do_stats(args):
 			'title': name.strip(),
 			'topiccount': int(topics.replace(',', '')),
 			'replycount': int(posts.replace(',', ''))})
+
+	#
+        # Handle unreplied topics
+	#
+
+	tree = html.fromstring(unreplied.content)
+	counts = tree.xpath('//div[@class="bbp-pagination-count"]/text()')
+	stats['unreplied'] = int(
+			re.search('\of ([0-9]+) total\)', counts[0]).group(1))
+
+
+	#
+	# Emit the data
+	#
 
 	if args.organise:
 		os.makedirs(now.strftime('%Y/%m/%d'), exist_ok=True)
