@@ -35,7 +35,11 @@ sudo apt-get -y install \
 	vim-nox \
 	arduino-mk arduino git swig3.0 python-dev nodejs-dev \
 	cmake pkg-config libpcre3-dev \
-	libfdt-dev
+	libfdt-dev \
+	locales
+
+sudo locale-gen en_GB.utf8
+sudo dpkg-reconfigure locales
 
 mkdir -p ~/Projects/upstream
 
