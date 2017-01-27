@@ -52,7 +52,7 @@ def destringize(s):
 		return (s,)
 	return s
 
-def build(cmds=()):
+def build(cmds=(), modules=True):
 	try:
 		for cmd in destringize(cmds):
 			run(cmd)
@@ -61,7 +61,8 @@ def build(cmds=()):
 		# to our username.
 		run('scripts/config --set-str LOCALVERSION -$USER-')
 		run('make CC="ccache %sgcc" -j 24' % (os.environ['CROSS_COMPILE'],))
-		run('make INSTALL_MOD_PATH=/opt/debian/jessie-armel-rootfs modules_install')
+		if modules:
+			run('make INSTALL_MOD_PATH=/opt/debian/jessie-armel-rootfs modules_install')
 	except:
 		skip("Cannot compile")
 
@@ -89,6 +90,43 @@ def netcat(host, port, logfile=sys.stdout):
 	except:
 		bad("Cannot access %s:%s" % (host, port))
 
+def fvp(logfile=sys.stdout):
+	"""Launch fvp and wait for sockets to open, without automatic
+	failure reporting.
+	"""
+
+	FVP = '/home/drt/Apps/Foundation_Platformpkg'
+	FIRMWARE = '/home/drt/Development/Linaro/ARM/16.06/binaries'
+	BUILDROOT = '/home/drt/Development/Buildroot/buildroot-aarch64'
+
+	try:
+		cmd = ('{}/models/Linux64_GCC-4.1/Foundation_Platform ' +
+			'--cores=4 ' +
+			'--no-secure-memory ' +
+			'--visualization ' +
+			'--gicv3 ' +
+			'--data={}/bl1.bin@0x0 ' +
+			'--data={}/fip.bin@0x8000000 ' +
+			'--data=arch/arm64/boot/Image@0x80080000 ' +
+			'--data=arch/arm64/boot/dts/arm/fvp-foundation-gicv3-psci.dtb@0x83000000 ' +
+			'--data={}/ramdisk.img@0x84000000 ' +
+			'--block-device={}/output/images/rootfs.ext2'
+		      ).format(FVP, FIRMWARE, FIRMWARE, FIRMWARE, BUILDROOT)
+
+		print(cmd)
+		fvp = pexpect.spawn(cmd, logfile=logfile)
+
+		fvp.expect('Listening for serial connection on port ([0-9]+)')
+                port = int(fvp.match.group(1))
+		fvp.expect('Simulation is started')
+		print("Simulation is started")
+
+		uart = telnet('localhost', port)
+
+		return (fvp, uart)
+	except:
+		bad("Cannot boot")
+
 def qemu(cmd, logfile=None):
 	"""Launch qemu and wait for sockets to open, with automatic
 	failure reporting.
@@ -100,8 +138,10 @@ def qemu(cmd, logfile=None):
 	try:
 		print(cmd)
 		q = pexpect.spawn(cmd, logfile=logfile)
+
 		q.expect('QEMU waiting for connection')
-		print("qemu is waiting for connection")
+                print("QEMU waiting for connection")
+
 		return q
 	except:
 		bad("Cannot boot")
@@ -162,6 +202,19 @@ def expect_kernel_boot(s, bootloader=()):
 	except:
 		bad('Incorrect boot activity messages (kernel)')
 
+def expect_buildroot_boot(s, bootloader=()):
+	"""Observe a typical boot sequence until we see evidence of
+	buildroot init issuing messages to the console.
+
+	"""
+	expect_kernel_boot(s, bootloader);
+
+	try:
+		s.expect('Starting logging')
+                s.expect('OK')
+                s.expect('Welcome to Buildroot')
+	except:
+		bad('Incorrect boot activity messages (buildroot)')
 
 def expect_systemd_boot(s, bootloader=()):
 	"""Observe a typical boot sequence until we see evidence of
