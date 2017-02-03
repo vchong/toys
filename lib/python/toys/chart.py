@@ -13,6 +13,8 @@ def get_colour(s):
 		'LAVA' : 'orange',
 		'96boards' : 'red',
 		'96Boards' : 'red',
+                # Daniel Thompson and Leo Yan both hash orange
+                'Daniel Thompson' : 'green',
 	}
 
 	if s in override:
