@@ -6,12 +6,13 @@ def run(args=[]):
 	os.putenv('XTERM_IS_NOP', 'y') 
 
 	verdict.build((
-		'config --kgdb --nfs --modernize --pedantic ' +
+		'config defconfig ' +
+                        '--kgdb --nfs --modernize --pedantic ' +
 			'--enable DEBUG_SPINLOCK ' +
 			'--enable PROVE_LOCKING ' +
 			'--enable USE_ICC_SYSREGS_FOR_IRQFLAGS ' +
 			'--enable MAGIC_SYSRQ_BREAK_EMULATION ' +
-			'--enable CMDLINE_FORCE',
+			'--enable CMDLINE_FORCE ',
 		'scripts/config --set-str CMDLINE ' +
 			'"console=ttyAMA0,115200 root=/dev/vda efi=noruntime"'
 		), modules=False)
