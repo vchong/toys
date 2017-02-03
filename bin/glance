@@ -1,0 +1,541 @@
+#!/usr/bin/env python3
+
+'''
+glance - JIRA to JSON and JSON data extraction
+
+Prerequisites (ubuntu:16.04):
+
+ * sudo apt -y install python3 python3-pip
+ * sudo apt -y install python3-iso8601 python3-keyring
+ * sudo pip3 install jira
+
+'''
+
+import argparse
+from jira.client import JIRA
+import json
+import iso8601
+import os
+import re
+import textwrap
+import sys
+
+import toys.collect as collect
+import toys.config as config
+import toys.date as date
+
+# Let's make the plotting tools optional (for those who only use glimpse
+# for their weekly report)
+try:
+	import toys.chart as chart
+	import matplotlib.pyplot as plt
+except:
+	pass
+
+# If it's installed we'd rather use IPython for interaction...
+try:
+	import IPython
+	interact = IPython.embed
+except:
+	import pdb
+	interact = pdb.set_trace
+
+#
+# Collection of find/replace strings to massage a summary for
+#  readability.
+#
+# Ideally all we would do with hacks is strip our redundant idioms
+# such as including the issuetype in the summary.
+#
+# However for now we go a bit deeper and try to remove other
+# redundant information from the summary (such as member name) or
+# excessive use of verbs.
+#
+hacks = (
+	('WIFI', 'WiFi'),
+	('wifi', 'WiFi'),
+)
+
+component_aliases = {
+	'Android-upstreaming' : 'Linaro'
+}
+
+displayname_aliases = {
+	'Esla.Anzaku@linaro.org' : 'Elsa'
+}
+
+component_categories = (
+	'BSP Analysis', 'Engineering works', 'Member Build', 'LAVA', 'Training', '96Boards', 'Upstream Consultancy', 'Metis', 'Linaro'
+)
+
+def warn(issue, msg):
+	lines = textwrap.wrap('{} {}'.format(issue['url'], msg),
+			initial_indent=   'WARNING: ',
+			subsequent_indent='         ')
+	print('\n'.join(lines), file=sys.stderr)
+
+class Issue(dict):
+	re_ymd = re.compile('(20[0-9][0-9]).?([0-9][0-9]).?([0-9][0-9])')
+	re_progress = re.compile('^(h[123456]\.|#+)?\s*[Pp]rogress\s*')
+	re_plans = re.compile('^(h[123456]\.|#+)?\s*[Pp]lans\s*')
+	re_split_worklog = re.compile('\n+ *[*+-]  *|^ *[*+-]  *|\n\n+')
+
+	@staticmethod
+	def wrap(jira, issue):
+		'''Factory method to turn a JIRA issue into a JSON one'''
+		self = Issue(issue.raw)
+
+		summary = self['fields']['summary']
+		for (old, new) in hacks:
+			summary = summary.replace(old, new)
+		self['summary'] = summary.strip()
+
+		self['engineering_status'] = self['fields']['customfield_10022']
+		# This should probably transition into a method
+		self['url'] = 'https://projects.linaro.org/browse/' + self['key']
+
+		if self.is_story():
+			self['parent'] = self['fields']['customfield_10005']
+		#elif self.is_subtask():
+		#	# Canonical form for parent: <JIRA Issue: key=u'KWG-56', id=u'13944'>
+		#	self['parent'] = issue['fieldsl#].parent.key
+
+
+		# Extract and attach the worklogs for this issue
+		self['worklog'] = [ w.raw for w in jira.worklogs(self['key']) ]
+
+		return self
+
+	@staticmethod
+	def fetch(since, constraint='', recurse=True):
+		cfg = config.get_config()
+		password = config.get_password(cfg, 'jira')
+
+		query = 'project = "Premium Services Engineering"'
+		query += ' AND (statusCategory != Done OR updatedDate >= "{}")'.format(since.strftime("%Y/%m/%d %H:%M"))
+		query += constraint
+
+		jira = JIRA(options={'server': cfg['jira']['server']},
+			basic_auth=(cfg['jira']['username'], password))     
+
+		issues = [ Issue.wrap(jira, i) \
+				for i in jira.search_issues(query) ]
+
+		# TODO: ideally this would be a multi-pass approach
+		if recurse:
+			keys = set([ i['key'] for i in issues ])
+
+			for issue in list(issues):
+				for link in issue['fields']['issuelinks']:
+					if 'outwardIssue' in link:
+						rel = link['outwardIssue']
+					else:
+						rel = link['inwardIssue']
+					j = jira.issue(rel['key'])
+					issues.append(Issue.wrap(jira, j))
+
+		return issues
+
+	@staticmethod
+	def loads(raw):
+		data = json.loads(raw)
+		return [ Issue(i) for i in data ]
+
+	@staticmethod
+	def load(obj):
+		if not obj:
+			data = json.load(sys.stdin)
+		elif isinstance(obj, str):
+			with open(obj, 'r') as f:
+				data = json.load(f)
+		else:
+			data = json.load(obj)
+		return [ Issue(i) for i in data ]
+
+
+	def _parse_worklog(self, jira):
+		self.worklog = []
+
+		for id in jira.worklogs(self['key']):
+			self.worklog.append(jira.worklog(self['key'], id))
+
+		# Parse into progress and plans (and automatically un-bullet)
+		for log in self.worklog:
+			log.progress = []
+			log.plans = []
+			active = log.progress
+
+			comment = log.comment.replace('\r', '')
+
+			for ln in re.split(self.re_split_worklog, log.comment.replace('\r', '')):
+				ln = ln.replace('\n', ' ').strip()
+
+				m = re.match(self.re_progress, ln)
+				if m:
+					ln = ln[m.end():]
+
+				m = re.match(self.re_plans, ln)
+				if m:
+					active = log.plans
+					ln = ln[m.end():]
+
+				if ln:
+					active.append(ln)
+
+	def is_story(self):
+		return self['fields']['issuetype']['name'] == 'Story'
+
+	def is_subtask(self):
+		'''A sub-task is similar to a blueprint but has a proper
+		parent-child relationship with the engineering card.
+		'''
+		return self['fields']['issuetype']['name'] == 'Sub-task'
+
+	def is_epic(self):
+		return self['fields']['issuetype']['name'] == 'Epic'
+
+	def categorize(self):
+		lookup = {
+			'Open': (),
+			'TODO': ('Plan',),
+			'In Progress' : ('Plan', 'Progress'),
+			'Resolved' : ('Progress',),
+			'Closed' : ('Progress',),
+		}
+
+		if self['fields']['status']['name'] in lookup:
+			return set(lookup[self['fields']['status']['name']])
+
+		warn(self, 'has bad status ({})'.format(self['fields']['status']['name']))
+		return set()
+
+	def date(self, key):
+		if key not in self['fields']:
+			return None
+
+		return iso8601.parse_date(self['fields'][key])
+
+	def field(self, f):
+		'''Searches both top-level and fields automatically.'''
+		if f in self:
+			return self[f]
+		else:
+			return self['fields'][f]
+
+	def components(self):
+		components = []
+		if not self['key'].startswith('PSE-'):
+			components += ('Linaro', 'Engineering works')
+		for c in self['fields']['components']:
+			name = c['name']
+			if name in component_aliases:
+				name = component_aliases[name]
+			components.append(name)
+		return components
+
+	def has_component(self, needle, strict=False):
+		haystack = self.components()
+		if not strict:
+			needle = needle.lower()
+			haystack = [ hay.lower() for hay in haystack ]
+		return needle in haystack
+
+	def get_component(self):
+		components = self.components()
+		for p in component_categories:
+			if p in components and p != "Linaro":
+				return p
+
+		warn(self, 'does not match the component categories')
+		return self['key']
+
+	def get_member(self):
+		components = self.components()
+		for p in component_categories:
+			if len(components) < 2:
+				break
+			if p in components:
+				components.remove(p)
+
+		if len(components) == 0:
+			warn(self, 'has no member')
+		elif len(components) >= 2:
+			warn(self, 'has too many members '+
+					'(incomplete category list?)')
+		else:
+			return components[0]
+		return self['key']
+
+	def get_assignees(self):
+		# TODO: There is no longer any list of assignees... this
+		# function must be reworked to iterate over any blueprints
+		# of this card.
+		msg = ""
+		for a in sorted(self.assignees):
+			msg += ", {}".format(a.partition(' ')[0])
+		return msg.lstrip(', ')
+
+	def get_summary(self, member):
+		return '{}: {} [{}] ({})'.format(member, self.summary, 
+				self.get_assignees(), self['key'])
+
+	# TODO: This is obsolete by the worklog() method above (and the filter command)
+	def get_worklog(self, jira, age=None, recurse=False):
+		logs = list(self.worklog)
+		if recurse and self.is_epic():
+			for bp in self.blueprints:
+				logs += bp.worklog
+
+		# Filter by date if requested
+		if age:
+			logs = [g for g in logs
+				if iso8601.parse_date(g.started) >= age[0] and
+				   iso8601.parse_date(g.started) <= age[1]]
+
+		# Return work log in time sorted order
+		return sorted(logs, key=lambda g: g.started)
+
+class Report(object):
+	def __init__(self, issues=[]):
+		self.issues = {}
+		self.cards = {}
+		self.blueprints = {}
+		self.members = {}
+
+		for i in issues:
+			self.add(i)
+		self.link_blueprints()
+
+	def add(self, issue):
+		self.issues[issue['key']] = issue
+
+		if issue.is_story() or issue.is_subtask():
+			self.blueprints[issue['key']] = issue
+		elif issue.is_epic():
+			self.cards[issue['key']] = issue
+
+			components = []
+			for c in issue['fields']['components']:
+				name = c['name']
+				if name in component_aliases:
+					name = component_aliases[name]
+				components.append(name)
+
+			name = issue.get_member()
+			if name not in self.members:
+				self.members[name] = []
+			self.members[name].append(issue)
+
+			issue['blueprints'] = []
+		else:
+			warn(issue, 'has unexpected issuetype {}'.format(
+				issue['fields']['issuetype']['name']))
+
+	def link_blueprints(self):
+		'''Iterate over the blueprints and link them to their cards.'''
+		for b in self.blueprints.values():
+			if 'parent' not in b:
+				warn(b, 'is not linked to an EPIC')
+				continue
+			if b['parent'] not in self.cards:
+				warn(b, 'is linked to non-existant {}'.format(b['parent']))
+				continue
+
+			card = self.cards[b['parent']]
+			card['blueprints'].append(b)
+
+	def worklog(self):
+		'''Fetch all worklogs held within the report.'''
+		worklog = []
+
+		for i in self.issues.values():
+			for w in i['worklog']:
+				# This does alter the data but the change is additive
+				# it is harmless if we emit the resulting structures.
+				w['issue'] = i['key']
+			worklog += i['worklog']
+
+		return sorted(worklog, key=lambda x: x['started'])
+
+def do_chart(args):
+	issues = Issue.load(args.json)
+	report = Report(issues)
+
+	if args.work_by_engineer:
+		worklog = report.worklog()
+		data = collect.collect_by(worklog,
+			lambda w: iso8601.parse_date(w['started']).strftime('%Y-%U'))
+		for week in data.keys():
+			data[week] = collect.collect_and_count_by(data[week],
+				lambda w: w['author']['displayName'],
+				lambda w: w['timeSpentSeconds'] / 3600)
+		chart.stacked_bar_chart(data, args.work_by_engineer,
+				title = 'Effort by week and assigned engineer',
+				xlabel = 'Year and week number',
+				ylabel = 'Effort (man/hours)')
+
+def do_count(args):
+	issues = Issue.loads(sys.stdin.read())
+
+	if args.worklog:
+		report = Report(issues)
+		print(len(report.worklog()))
+		return
+
+	print(len(issues))
+
+def do_fetch(args):
+	since = date.smart_parse(args.since)
+	issues = sorted(Issue.fetch(since), key=lambda i: i['key'])
+	json.dump(issues, sys.stdout)
+
+def do_filter(args):
+	issues = Issue.load(args.json)
+	by_key = {}
+	for i in issues:
+		by_key[i['key']] = i
+
+	if args.component:
+		issues = [ i for i in issues if i.has_component(args.component, args.strict) ]
+
+	if args.since:
+		since = date.smart_parse(args.since)
+		issues = [ i for i in issues if i.date('updated') >= since ]
+
+	if args.worklog_since:
+		since = date.smart_parse(args.worklog_since)
+		for i in issues:
+			i['worklog'] = [ w for w in i['worklog'] if 
+					iso8601.parse_date(w['started']) >= since ]
+
+	if args.no_worklog:
+		issues = [ i for i in issues if i['worklog'] ]
+			
+	# Go though the issues and ensure we "unfilter" any parent tickets
+	# since the Report class may go looking for them.
+	if not args.no_keep_parent:
+		keys = set([ i['key'] for i in issues ])
+		for i in list(issues):
+			if 'parent' in i:
+				if i['parent'] in keys or i['parent'] not in by_key:
+					continue
+				keys.add(i['parent'])
+				issues.append(by_key[i['parent']])
+		issues = sorted(issues, key=lambda i: i['key'])
+
+	json.dump(issues, sys.stdout)
+
+def do_format(args):
+	for i in Issue.loads(sys.stdin.read()):
+		ln = args.template
+		for m in re.finditer('{([^}:]+)([^}]*)}', args.template):
+			field = m.group(1)
+			fmt = m.group(2)
+
+			try:
+				if 'member' == field:
+					val = i.get_member()
+				elif 'component' == field:
+					val = i.get_component()
+				elif '-' in field:
+					(field, attr) = field.split('-', 1)
+					if isinstance(i.field(field), str):
+						val = i.field(field)[0:int(attr)]
+					else:
+						val = i.field(field)[attr]
+				else:
+					val = i.field(field)
+			except KeyError:
+				continue
+
+			ln = ln.replace(m.group(0), '{{{}}}'.format(fmt).format(val))
+		print(ln)
+
+def do_interact(args):
+	'''Directly interaction with the JSON data'''
+	if not args.json:
+		print("ERROR: --json is mandatory (try --help)", file=sys.stderr)
+		sys.exit(1)
+
+	with open(args.json) as f:
+		issues = Issue.loads(f.read())
+	issue = issues[-1]
+
+	interact()
+
+def do_worklog(args):
+	issues = Issue.loads(sys.stdin.read())
+	report = Report(issues)
+
+	# Sort by time order (glimpse used to sort by issue number here)
+	for w in report.worklog():
+		card = report.issues[w['issue']]
+		if 'parent' in card:
+			if card['parent'] in report.issues:
+				epic = report.issues[card['parent']]
+			else:
+				epic = card
+		else:
+			epic = card
+		print('"{}","{}","{}","{}","{}","{}","{}","{}"'.format(
+			card['key'], card['summary'], epic['key'],
+			card.get_member(), card.get_component(),
+			w['started'], w['timeSpentSeconds'],
+			w['author']['displayName']))
+
+def main(argv):
+	parser = argparse.ArgumentParser()
+	subparsers = parser.add_subparsers(dest='sub-command')
+	subparsers.required = True      # Can't be set using named arguments (yet)
+
+	s = subparsers.add_parser('chart')
+	s.add_argument("--json")
+	s.add_argument("--work-by-engineer")
+	s.set_defaults(func=do_chart)
+
+	s = subparsers.add_parser('count')
+	s.add_argument("--worklog", action='store_true')
+	s.set_defaults(func=do_count)
+
+	s = subparsers.add_parser('fetch')
+	s.add_argument("--since", default="2012-01-01",
+                        help="When to gather information from")
+	s.set_defaults(func=do_fetch)
+
+	s = subparsers.add_parser('filter')
+	s.add_argument('--component')
+	s.add_argument('--json')
+	s.add_argument('--since')
+	s.add_argument('--strict', action='store_true')
+	s.add_argument('--no-keep-parent', action='store_true')
+	s.add_argument('--no-worklog', action='store_true')
+	s.add_argument('--worklog-since')
+	s.set_defaults(func=do_filter)
+
+	s = subparsers.add_parser("format")
+	s.add_argument("--template",
+			default="{key}: {summary} ({member})")
+	s.set_defaults(func=do_format)
+
+	s = subparsers.add_parser('interact')
+	s.add_argument("--json")
+	s.set_defaults(func=do_interact)
+
+	s = subparsers.add_parser("summary")
+	s.add_argument("--template",
+			default="{created-10}: {key}: {summary} ({member})")
+	s.set_defaults(func=do_format)
+
+	s = subparsers.add_parser('worklog')
+	s.set_defaults(func=do_worklog)
+
+	args = parser.parse_args(argv[1:])
+	args.func(args)
+
+if __name__ == "__main__":
+        try:
+                sys.exit(main(sys.argv))
+        except KeyboardInterrupt:
+                sys.exit(1)
+        sys.exit(127)
+
