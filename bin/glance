@@ -60,10 +60,6 @@ component_aliases = {
 	'Android-upstreaming' : 'Linaro'
 }
 
-displayname_aliases = {
-	'Esla.Anzaku@linaro.org' : 'Elsa'
-}
-
 component_categories = (
 	'BSP Analysis', 'Engineering works', 'Member Build', 'LAVA', 'Training', '96Boards', 'Upstream Consultancy', 'Metis', 'Linaro'
 )
@@ -103,6 +99,9 @@ class Issue(dict):
 
 		# Extract and attach the worklogs for this issue
 		self['worklog'] = [ w.raw for w in jira.worklogs(self['key']) ]
+		for w in self['worklog']:
+			for (old, new) in hacks:
+				w['comment'] = w['comment'].replace(old, new)
 
 		return self
 
@@ -137,11 +136,6 @@ class Issue(dict):
 		return issues
 
 	@staticmethod
-	def loads(raw):
-		data = json.loads(raw)
-		return [ Issue(i) for i in data ]
-
-	@staticmethod
 	def load(obj):
 		if not obj:
 			data = json.load(sys.stdin)
@@ -152,35 +146,6 @@ class Issue(dict):
 			data = json.load(obj)
 		return [ Issue(i) for i in data ]
 
-
-	def _parse_worklog(self, jira):
-		self.worklog = []
-
-		for id in jira.worklogs(self['key']):
-			self.worklog.append(jira.worklog(self['key'], id))
-
-		# Parse into progress and plans (and automatically un-bullet)
-		for log in self.worklog:
-			log.progress = []
-			log.plans = []
-			active = log.progress
-
-			comment = log.comment.replace('\r', '')
-
-			for ln in re.split(self.re_split_worklog, log.comment.replace('\r', '')):
-				ln = ln.replace('\n', ' ').strip()
-
-				m = re.match(self.re_progress, ln)
-				if m:
-					ln = ln[m.end():]
-
-				m = re.match(self.re_plans, ln)
-				if m:
-					active = log.plans
-					ln = ln[m.end():]
-
-				if ln:
-					active.append(ln)
 
 	def is_story(self):
 		return self['fields']['issuetype']['name'] == 'Story'
@@ -211,6 +176,9 @@ class Issue(dict):
 
 	def date(self, key):
 		if key not in self['fields']:
+			return None
+
+		if not self['fields'][key]:
 			return None
 
 		return iso8601.parse_date(self['fields'][key])
@@ -266,34 +234,44 @@ class Issue(dict):
 			return components[0]
 		return self['key']
 
-	def get_assignees(self):
-		# TODO: There is no longer any list of assignees... this
-		# function must be reworked to iterate over any blueprints
-		# of this card.
-		msg = ""
-		for a in sorted(self.assignees):
-			msg += ", {}".format(a.partition(' ')[0])
-		return msg.lstrip(', ')
+class Worklog(dict):
+	re_progress = re.compile('^(h[123456]\.|#+)?\s*[Pp]rogress\s*')
+	re_plans = re.compile('^(h[123456]\.|#+)?\s*[Pp]lans\s*')
+	re_split_worklog = re.compile('\n+ *[*+-]  *|^ *[*+-]  *|\n\n+')
 
-	def get_summary(self, member):
-		return '{}: {} [{}] ({})'.format(member, self.summary, 
-				self.get_assignees(), self['key'])
+	def date(self, key):
+		if key not in self:
+			return None
 
-	# TODO: This is obsolete by the worklog() method above (and the filter command)
-	def get_worklog(self, jira, age=None, recurse=False):
-		logs = list(self.worklog)
-		if recurse and self.is_epic():
-			for bp in self.blueprints:
-				logs += bp.worklog
+		if not self[key]:
+			return None
 
-		# Filter by date if requested
-		if age:
-			logs = [g for g in logs
-				if iso8601.parse_date(g.started) >= age[0] and
-				   iso8601.parse_date(g.started) <= age[1]]
+		return iso8601.parse_date(self[key])
 
-		# Return work log in time sorted order
-		return sorted(logs, key=lambda g: g.started)
+	def parse(self):
+		progress = []
+		plans = []
+		active = progress
+
+		comment = self['comment'].replace('\r', '')
+
+		for ln in re.split(self.re_split_worklog, self['comment'].replace('\r', '')):
+			ln = ln.replace('\n', ' ').strip()
+
+			m = re.match(self.re_progress, ln)
+			if m:
+				ln = ln[m.end():]
+
+			m = re.match(self.re_plans, ln)
+			if m:
+				active = plans
+				ln = ln[m.end():]
+
+			if ln:
+				active.append(ln)
+
+		return (progress, plans)
+
 
 class Report(object):
 	def __init__(self, issues=[]):
@@ -344,38 +322,132 @@ class Report(object):
 			card = self.cards[b['parent']]
 			card['blueprints'].append(b)
 
-	def worklog(self):
-		'''Fetch all worklogs held within the report.'''
-		worklog = []
+	def assignees(self, key, recurse=False):
+		issues = [ self.issues[key], ]
+		if recurse:
+			issues += issues[0]['blueprints']
 
-		for i in self.issues.values():
+		assignees = set()
+		for i in issues:
+			if i['fields']['assignee']:
+				assignees.add(i['fields']['assignee']['displayName'])
+			else:
+				assignees.add("Noone")
+
+		return [ a for a in sorted(assignees) ]
+
+	def worklog(self, key=None, recurse=False):
+		'''Fetch worklogs held within the report.'''
+		if key:
+			issues = [ self.issues[key], ]
+			if recurse:
+				issues += issues[0]['blueprints']
+		else:
+			issues = self.issues.values()
+
+		worklog = []
+		for i in issues:
 			for w in i['worklog']:
-				# This does alter the data but the change is additive
+				# This does alter the data but the change is additive so
 				# it is harmless if we emit the resulting structures.
 				w['issue'] = i['key']
 			worklog += i['worklog']
 
-		return sorted(worklog, key=lambda x: x['started'])
+		return [ Worklog(w) for w in sorted(worklog, key=lambda x: x['started']) ]
 
 def do_chart(args):
 	issues = Issue.load(args.json)
 	report = Report(issues)
+	worklog = report.worklog()
 
-	if args.work_by_engineer:
-		worklog = report.worklog()
-		data = collect.collect_by(worklog,
-			lambda w: iso8601.parse_date(w['started']).strftime('%Y-%U'))
-		for week in data.keys():
-			data[week] = collect.collect_and_count_by(data[week],
-				lambda w: w['author']['displayName'],
-				lambda w: w['timeSpentSeconds'] / 3600)
-		chart.stacked_bar_chart(data, args.work_by_engineer,
+	if not args.barchart and not args.piechart:
+		args.barchart = True
+
+	# Functions to parse worklog data
+	collate_by_week = lambda w: w.date('started').strftime('%Y-%U')
+	collate_by_month = lambda w: w.date('started').strftime('%Y-%m')
+	collate_by_engineer = lambda w: w['author']['displayName']
+	collate_by_member = lambda w: report.issues[w['issue']].get_member()
+	collate_by_component = lambda w: report.issues[w['issue']].get_component()
+	count_effort = lambda w: w['timeSpentSeconds'] / 3600
+
+	if args.effort_by_engineer and args.barchart:
+		data = collect.accumulate_2d(worklog,
+				collate_by_week, collate_by_engineer, count_effort)
+		chart.stacked_barchart(data, args.effort_by_engineer,
 				title = 'Effort by week and assigned engineer',
 				xlabel = 'Year and week number',
 				ylabel = 'Effort (man/hours)')
 
+	if args.effort_by_member and args.barchart:
+		data = collect.accumulate_2d(worklog,
+				collate_by_month, collate_by_member, count_effort)
+		chart.stacked_barchart(data, args.effort_by_member,
+				title = 'Effort by month and member',
+				ylabel = 'Effort (man/hours)')
+
+	if args.effort_by_member and args.piechart:
+		data = collect.accumulate(worklog, collate_by_member, count_effort)
+		chart.piechart(data, args.effort_by_member)
+
+	if args.effort_by_component and args.barchart:
+		data = collect.accumulate_2d(worklog,
+				collate_by_month, collate_by_component, count_effort)
+		chart.stacked_barchart(data, args.effort_by_component,
+				title = 'Effort by month and component',
+				ylabel = 'Effort (man/hours)')
+
+	if args.effort_by_component and args.piechart:
+		data = collect.accumulate(worklog, collate_by_component, count_effort)
+		chart.piechart(data, args.effort_by_component)
+
+	if args.card_tracker:
+		since = date.smart_parse(args.since)
+		until = date.smart_parse(args.until)
+
+		all_cards = report.issues.values()
+		closed_cards = [ c for c in all_cards if c.date('resolutiondate') ]
+
+		created_by_month = collect.accumulate(all_cards,
+				lambda c: c.date('created').strftime('%Y-%m'))
+		resolved_by_month = collect.accumulate(closed_cards,
+				lambda c: c.date('resolutiondate').strftime('%Y-%m'))
+
+		labels = []
+		d = since
+		while d < until:
+			labels.append(d.strftime('%Y-%m'))
+			d = d.replace(month=d.month + 1) if d.month < 12 else d.replace(d.year + 1, 1)
+
+		created_bys = [ created_by_month[l] for l in labels ]
+		resolved_bys = [ resolved_by_month[l] for l in labels ]
+
+		count = len(all_cards) - len(closed_cards)
+		num_open = []
+		for c, r in reversed(list(zip(created_bys, resolved_bys))):
+			num_open.insert(0, count)
+			count += r - c
+
+		fig, ax = plt.subplots()
+		bar_width = 0.25
+		index = [x+bar_width for x in range(len(labels))]
+		opacity = 0.4
+
+		plt.plot([x+bar_width for x in index], num_open, color='b', linestyle='--', marker='o', label='Work to be completed')
+		rects1 = plt.bar(index, created_bys, bar_width,alpha=opacity, color='b',label='New work')
+		rects2 = plt.bar([x+bar_width for x in index], resolved_bys, bar_width,alpha=opacity,color='r',label='Completed work')
+
+		#plt.xlabel('Time')
+		plt.ylabel('Issues (epics & stories)')
+		plt.title('Work items tracked per-month')
+		plt.grid(zorder=0)
+		plt.xticks([x+bar_width for x in index], labels, rotation=90)
+		lgd = plt.legend(bbox_to_anchor=(1.05, 1), loc=2)
+		plt.savefig(args.card_tracker, bbox_extra_artists=(lgd,), bbox_inches='tight')
+		plt.close()
+
 def do_count(args):
-	issues = Issue.loads(sys.stdin.read())
+	issues = Issue.load(args.json)
 
 	if args.worklog:
 		report = Report(issues)
@@ -395,6 +467,16 @@ def do_filter(args):
 	for i in issues:
 		by_key[i['key']] = i
 
+	def filter_by(person, issue, needle):
+		field = issue['fields'][person]
+		if not field:
+			return False
+
+		return needle in field['displayName'] or needle in field['emailAddress']
+
+	if args.assignee:
+		issues = [ i for i in issues if filter_by('assignee', i, args.assignee) ]
+
 	if args.component:
 		issues = [ i for i in issues if i.has_component(args.component, args.strict) ]
 
@@ -410,7 +492,7 @@ def do_filter(args):
 
 	if args.no_worklog:
 		issues = [ i for i in issues if i['worklog'] ]
-			
+
 	# Go though the issues and ensure we "unfilter" any parent tickets
 	# since the Report class may go looking for them.
 	if not args.no_keep_parent:
@@ -426,7 +508,7 @@ def do_filter(args):
 	json.dump(issues, sys.stdout)
 
 def do_format(args):
-	for i in Issue.loads(sys.stdin.read()):
+	for i in Issue.load(args.json):
 		ln = args.template
 		for m in re.finditer('{([^}:]+)([^}]*)}', args.template):
 			field = m.group(1)
@@ -453,18 +535,47 @@ def do_format(args):
 
 def do_interact(args):
 	'''Directly interaction with the JSON data'''
-	if not args.json:
-		print("ERROR: --json is mandatory (try --help)", file=sys.stderr)
-		sys.exit(1)
-
-	with open(args.json) as f:
-		issues = Issue.loads(f.read())
+	issues = Issue.load(args.json)
 	issue = issues[-1]
 
 	interact()
 
+def do_passwd(args):
+	cfg = config.get_config()
+	password = config.set_password(cfg, 'jira')
+
+def do_weekly(args):
+	issues = Issue.load(args.json)
+	report = Report(issues)
+
+	progress = [ ('## Progress', 0) ]
+	plans = [ ('', 0), ('## Plans', 0) ]
+
+	for member in sorted(report.members.keys()):
+		for card in sorted(report.members[member], key=lambda c: c['key']):
+			key = card['key']
+			assignees = ', '.join([ a.split()[0] for a in report.assignees(key, recurse=True) ])
+			summary = '{}: {} [{}] ({})'.format(member, card['summary'], assignees, key)
+
+			progress.append(('\n', 0))
+			progress.append((summary, 1))
+			plans += progress[-2:]
+
+			for log in report.worklog(card['key'], recurse=True):
+				(prog, plan) = log.parse()
+				progress += [ (p, 2) for p in prog ]
+				plans += [ (p, 2) for p in plan ]
+
+	wrappers = (
+		textwrap.TextWrapper(),
+		textwrap.TextWrapper(initial_indent=' * ', subsequent_indent='   '),
+		textwrap.TextWrapper(initial_indent='   - ', subsequent_indent='     ')
+	)
+	for (msg, level) in progress + plans:
+		print('\n'.join(wrappers[level].wrap(msg)))
+
 def do_worklog(args):
-	issues = Issue.loads(sys.stdin.read())
+	issues = Issue.load(args.json)
 	report = Report(issues)
 
 	# Sort by time order (glimpse used to sort by issue number here)
@@ -489,12 +600,22 @@ def main(argv):
 	subparsers.required = True      # Can't be set using named arguments (yet)
 
 	s = subparsers.add_parser('chart')
-	s.add_argument("--json")
-	s.add_argument("--work-by-engineer")
+	s.add_argument("--card-tracker")
+	s.add_argument("--effort-by-component")
+	s.add_argument("--effort-by-engineer")
+	s.add_argument("--effort-by-member")
+	s.add_argument("--barchart", action='store_true')
+	s.add_argument("--piechart", action='store_true')
+	s.add_argument("--since",
+		help="Date from which to chart data (applies to card graphs only)")
+	s.add_argument("--until",
+		help="Only chart data before this date (applies to card graphs only)")
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_chart)
 
 	s = subparsers.add_parser('count')
 	s.add_argument("--worklog", action='store_true')
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_count)
 
 	s = subparsers.add_parser('fetch')
@@ -503,30 +624,42 @@ def main(argv):
 	s.set_defaults(func=do_fetch)
 
 	s = subparsers.add_parser('filter')
+	s.add_argument('--assignee')
 	s.add_argument('--component')
-	s.add_argument('--json')
 	s.add_argument('--since')
 	s.add_argument('--strict', action='store_true')
 	s.add_argument('--no-keep-parent', action='store_true')
 	s.add_argument('--no-worklog', action='store_true')
 	s.add_argument('--worklog-since')
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_filter)
 
 	s = subparsers.add_parser("format")
 	s.add_argument("--template",
 			default="{key}: {summary} ({member})")
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_format)
 
 	s = subparsers.add_parser('interact')
-	s.add_argument("--json")
+	s.add_argument("json")
 	s.set_defaults(func=do_interact)
 
 	s = subparsers.add_parser("summary")
 	s.add_argument("--template",
 			default="{created-10}: {key}: {summary} ({member})")
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_format)
 
+	s = subparsers.add_parser('passwd')
+	s.set_defaults(func=do_passwd)
+
+	s = subparsers.add_parser("weekly",
+			help="Generate a (template) weekly report")
+	s.add_argument("json", nargs='?')
+	s.set_defaults(func=do_weekly)
+
 	s = subparsers.add_parser('worklog')
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_worklog)
 
 	args = parser.parse_args(argv[1:])
