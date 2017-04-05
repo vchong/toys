@@ -7,3 +7,4 @@ reports/
 sse-auto-report.*/
 zendesk.db
 96btool.db
+.ipynb_checkpoints/*
