@@ -262,7 +262,7 @@ class Ticket(dict):
 			'qa_lava_test_scripts', 'qualcomm', 'qualcomm_stp',
 			'sample', 'samsung', 'sharp_zarus_sl5500',
 			'staging_vexpress_a9', 'v_fav', 'vicky_test',
-			'video_condecs', 'zd_test', 'zendesk'))
+			'video_condecs', 'zd_test', 'zendesk', 'arrow'))
 
 		unknown = set(tags) - nonglobs
 		if len(unknown):
@@ -276,6 +276,33 @@ class Ticket(dict):
 
 	def created_at(self):
 		return iso8601.parse_date(self['created_at'])
+
+	def format(self, template):
+		output = template
+		for m in re.finditer('{([^}:]+)([^}]*)}', template):
+			field = m.group(1)
+			fmt = m.group(2)
+
+			try:
+				if 'id' == field:
+					val = self.id()
+				elif 'orgname' == field:
+					val = self.orgname()
+				elif 'quicklink' == field:
+					val = self.quicklink()
+				elif '-' in field:
+					(field, attr) = field.split('-', 1)
+					if isinstance(self[field], str):
+						val = self[field][0:int(attr)]
+					else:
+						val = self[field][attr]
+				else:
+					val = self[field]
+			except ValueError:
+				continue
+
+			output = output.replace(m.group(0), '{{{}}}'.format(fmt).format(val))
+		return output
 
 	def id(self):
 		return 'LDTS-{:04d}'.format(self['id'])
@@ -390,19 +417,16 @@ class Ticket(dict):
 		return tickets
 
 	@staticmethod
-	def loads(raw):
-		try:
-			data = json.loads(raw)
-		except json.decoder.JSONDecodeError as e:
-			if e.lineno != 2 or e.colno != 1:
-				raise e
+	def load(obj):
+		if not obj:
+			data = json.load(sys.stdin)
+		elif isinstance(obj, str):
+			with open(obj, 'r') as f:
+				data = json.load(f)
+		else:
+			data = json.load(obj)
 
-			data = []
-			for ln in raw.splitlines():
-				data.append(json.loads(ln))
-
-		tickets = [ Ticket(t) for t in data ]
-		return tickets
+		return [ Ticket(t) for t in data ]
 
 def get_count_by_member(tickets, reduce_namespace=False):
 	count = collections.defaultdict(int)
@@ -428,7 +452,7 @@ def get_count_by_category(tickets):
 	return count
 
 def do_chart(args):
-	tickets = Ticket.loads(sys.stdin.read())
+	tickets = Ticket.load(args.json)
 
 	if args.by_category:
 		seive = lambda t: t.category()
@@ -444,7 +468,7 @@ def do_chart(args):
 			ylabel = 'Number of tickets')
 
 def do_count(args):
-	tickets = Ticket.loads(sys.stdin.read())
+	tickets = Ticket.load(args.json)
 	count = None
 
 	if args.by_member:
@@ -479,7 +503,7 @@ def get_colour(s):
 	return '#{}'.format(hashlib.md5(str(s).encode('UTF-8')).hexdigest()[-6:])
 
 def do_days(args):
-	for t in Ticket.loads(sys.stdin.read()):
+	for t in Ticket.load(args.json):
 		created_at = iso8601.parse_date(t['created_at'])
 		updated_at = iso8601.parse_date(t['updated_at'])
 		days = updated_at - created_at
@@ -501,7 +525,7 @@ def do_fetch(args):
 def do_fields(args):
 	fields = set()
 
-	for t in Ticket.loads(sys.stdin.read()):
+	for t in Ticket.load(args.json):
 		for k in t.keys():
 			fields.add(k)
 			if isinstance(t[k], dict):
@@ -515,7 +539,7 @@ def do_filter(args):
 	since = parse_date(args.since)
 	until = parse_date(args.until)
 
-	data = Ticket.loads(sys.stdin.read())
+	data = Ticket.load(args.json)
 
 	data = [ t for t in data if t.is_within_date(since, until, args.restrict) ]
 
@@ -537,35 +561,30 @@ def do_filter(args):
 	json.dump(data, sys.stdout)
 
 def do_format(args):
-	for t in Ticket.loads(sys.stdin.read()):
-		ln = args.template
-		for m in re.finditer('{([^}:]+)([^}]*)}', args.template):
-			field = m.group(1)
-			fmt = m.group(2)
+	for t in Ticket.load(args.json):
+		print(t.format(args.template))
 
-			try:
-				if 'id' == field:
-					val = t.id()
-				elif 'orgname' == field:
-					val = t.orgname()
-				elif 'quicklink' == field:
-					val = t.quicklink()
-				elif '-' in field:
-					(field, attr) = field.split('-', 1)
-					if isinstance(t[field], str):
-						val = t[field][0:int(attr)]
-					else:
-						val = t[field][attr]
-				else:
-					val = t[field]
-			except ValueError:
-				continue
+def do_markdown(args):
+	template = args.template
+	if args.add_organization:
+		template = template + ' ({orgname})'
+	if args.add_requester:
+		template = template + ' ({requester-name})'
+	if args.add_requester_email:
+		template = template + ' ({requester-email})'
 
-			ln = ln.replace(m.group(0), '{{{}}}'.format(fmt).format(val))
-		print(ln)
+	tickets = Ticket.load(args.json)
+	data = collect_by(tickets, lambda t: t['status'])
+	for status in ('closed', 'solved', 'pending', 'open'):
+		if status not in data:
+			continue
+
+		print("* {}".format(status.title()))
+		for t in data[status]:
+			print("  - {}".format(t.format(template)))
 
 def do_monthly(args):
-	tickets = Ticket.loads(sys.stdin.read())
+	tickets = Ticket.load(args.json)
 
 	def factory():
 		return collections.defaultdict(list)
@@ -629,7 +648,7 @@ def do_passwd(args):
 	keyring.set_password(cfg['server'], cfg['username'], getpass.getpass())
 
 def do_piechart(args):
-	tickets = Ticket.loads(sys.stdin.read())
+	tickets = Ticket.load(args.json)
 	count = None
 
 	if args.by_member:
@@ -650,8 +669,13 @@ def do_piechart(args):
 	plt.close()
 
 def do_pull(args):
-	with open(args.db) as f:
-		tickets = Ticket.loads(f.read())
+	if args.verbose:
+		sys.stdout.write('Reading existing ticket cache .')
+		sys.stdout.flush()
+	tickets = Ticket.load(args.db)
+	if args.verbose:
+		sys.stdout.write('..')
+		sys.stdout.flush()
 
 	# Find the most recent update and prepare tickets for easy update
 	since = tickets[0].updated_at()
@@ -662,15 +686,32 @@ def do_pull(args):
 			since = d
 		db[t['id']] = t
 
+	if args.verbose:
+		print(' ok')
+		sys.stdout.write('Fetching tickets changed since {} ...'.format(
+				since.isoformat()))
+		sys.stdout.flush()
+
 	new_tickets = Ticket.fetch(since, None)
+	if args.verbose:
+		print(' ok')
+
 	for t in new_tickets:
 		if t['id'] not in db:
+			if args.verbose:
+				print('{}: Received new ticket'.format(t.id()))
 			db[t['id']] = t
 			continue
 
 		old = db[t['id']]
 		if old.updated_at() < t.updated_at():
+			if args.verbose:
+				print('{}: Updating ticket'.format(t.id()))
 			db[t['id']] = t
+			continue
+
+		if args.verbose:
+			print('{}: No change'.format(t.id()))
 
 	# Reconstruct tickets and save it
 	tickets = [ db[k] for k in sorted(db.keys()) ]
@@ -682,7 +723,7 @@ def do_pull(args):
 		json.dump(tickets, f)
 
 def do_tags(args):
-	tickets = Ticket.loads(sys.stdin.read())
+	tickets = Ticket.load(args.json)
 
 	tags = set()
 	for t in tickets:
@@ -702,7 +743,7 @@ def do_weekly(args):
 		print('\n'.join(wrappers[level].wrap(msg)))
 
 	headings = []
-	for t in Ticket.loads(sys.stdin.read()):
+	for t in Ticket.load(args.json):
 		organization = t.orgname()
 		subject = t['subject']
 		assignee = t.assignee('name').split(' ', 1)[0]
@@ -724,6 +765,7 @@ def main(argv):
 	s = subparsers.add_parser('chart')
 	s.add_argument('--by-category', action='store_true')
 	s.add_argument("--output", default="ldtstool.png")
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_chart)
 
 	s = subparsers.add_parser('count')
@@ -731,13 +773,16 @@ def main(argv):
 	s.add_argument('--by-category', action='store_true')
 	s.add_argument('--by-month', action='store_true')
 	s.add_argument('--csv', action='store_true')
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_count)
 
 	s = subparsers.add_parser('csv')
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_format,
 			template='"{id}","{subject}","{orgname}","{requester-email}"')
 
 	s = subparsers.add_parser('days')
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_days)
 
 	s = subparsers.add_parser('dump')
@@ -753,6 +798,7 @@ def main(argv):
 	s.set_defaults(func=do_fetch)
 
 	s = subparsers.add_parser('fields')
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_fields)
 
 	s = subparsers.add_parser("filter")
@@ -769,18 +815,26 @@ def main(argv):
 	s.add_argument("--tags")
 	s.add_argument("--updated-before", default=None,
 		       help="Mostly only useful for testing 'pull'")
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_filter)
 
 	s = subparsers.add_parser("format")
 	s.add_argument("--template",
 			default="{id}: {subject} ({orgname} - {requester-email})")
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_format)
 
 	s = subparsers.add_parser('markdown')
-	s.set_defaults(func=do_format,
-			template="* [{id}]({quicklink}): {subject} ({status})")
+	s.add_argument("--add-organization", action='store_true')
+	s.add_argument("--add-requester", action ='store_true')
+	s.add_argument("--add-requester-email", action ='store_true')
+	s.add_argument("--template",
+			default="[{id}]({quicklink}): {subject}")
+	s.add_argument("json", nargs='?')
+	s.set_defaults(func=do_markdown)
 
 	s = subparsers.add_parser('monthly')
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_monthly)
 
 	s = subparsers.add_parser('passwd')
@@ -793,6 +847,7 @@ def main(argv):
 			help="Filename for the graph")
 	s.add_argument("--title", default=None,
 			help="Title of the graph")
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_piechart)
 
 	s = subparsers.add_parser('pull')
@@ -800,16 +855,21 @@ def main(argv):
 		       help="File to update")
 	s.add_argument('--pipe', action='store_true',
 		       help="Duplicate output on stdout")
+	s.add_argument('--verbose', action='store_true',
+		       help="Show internal workings")
 	s.set_defaults(func=do_pull)
 
 	s = subparsers.add_parser('summary')
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_format,
 			template="{created_at-10}: {id}: {subject} ({orgname} - {requester-email})")
 
 	s = subparsers.add_parser('tags')
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_tags)
 
 	s = subparsers.add_parser('weekly')
+	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_weekly)
 
 	args = parser.parse_args(argv[1:])
