@@ -14,7 +14,7 @@ def run(args=[]):
 			'--enable MAGIC_SYSRQ_BREAK_EMULATION ' +
 			'--enable CMDLINE_FORCE ',
 		'scripts/config --set-str CMDLINE ' +
-			'"console=ttyAMA0,115200 root=/dev/vda efi=noruntime"'
+			'"console=ttyAMA0,115200 root=/dev/vda efi=noruntime earlycon"'
 		), modules=False)
 
 	(fvp, uart) = verdict.fvp()

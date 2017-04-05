@@ -60,7 +60,8 @@ def build(cmds=(), modules=True):
 		# Avoid collisions in /lib/modules by setting the local version
 		# to our username.
 		run('scripts/config --set-str LOCALVERSION -$USER-')
-		run('make CC="ccache %sgcc" -j 24' % (os.environ['CROSS_COMPILE'],))
+		#run('make CC="ccache %sgcc" -j 8' % (os.environ['CROSS_COMPILE'],))
+		run('make -j 8')
 		if modules:
 			run('make INSTALL_MOD_PATH=/opt/debian/jessie-armel-rootfs modules_install')
 	except:
@@ -95,7 +96,7 @@ def fvp(logfile=sys.stdout):
 	failure reporting.
 	"""
 
-	FVP = '/home/drt/Apps/Foundation_Platformpkg'
+	FVP = '/home/drt/Apps/Foundation_Platformpkg' #'-r10p0'
 	FIRMWARE = '/home/drt/Development/Linaro/ARM/16.06/binaries'
 	BUILDROOT = '/home/drt/Development/Buildroot/buildroot-aarch64'
 
