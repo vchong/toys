@@ -1,0 +1,15 @@
+#
+# lint-log
+#
+# Strip out timestamps and PIDs to make is easier to diff a dmesg log
+#
+
+tr -d '\000' | \
+sed \
+	-e 's/$//'				`# CR line endings` \
+	-e 's/\[[0-9][0-9]*\] //'		`# Fastboot timestamps` \
+	-e 's/\[ *[0-9][0-9]*\.[0-9][0-9]*\] c[0-9][0-9]*  *[0-9][0-9]* //' \
+						`# Android kernel stamps` \
+	-e 's/\[ *[0-9][0-9]*\.[0-9][0-9]*\] //'`# Linux timestamps` \
+	-e 's/\(initcall .* after \)\([0-9][0-9]*\)\( usecs\)/\1###\3/' \
+						`# initcall execution time` \
