@@ -10,10 +10,19 @@
 # General prep
 #
 
-day=`date +'%-d'`
-since=`date -d"last-month -$(($day - 1)) days 00:00:00" +"%Y-%m-%d %H:%M:%S"`
-until=`date -d"-$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
-full_year_since=`date -d"-$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+if true
+then
+	day=`date +'%-d'`
+	since=`date -d"last-month -$(($day - 1)) days 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	until=`date -d"-$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
+	full_year_since=`date -d"-$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+else
+	day=`date +'%-d'`
+	since=`date -d"-$(($day - 1)) days 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	until=`date -d"next-month -$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
+	full_year_since=`date -d"next-month -$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	since=$full_year_since
+fi
 
 echo "Generating report from $since until $until"
 echo
@@ -52,37 +61,37 @@ printf "Generating LDTS activity graphs ."
 
 ldtstool dump | ldtstool filter --restrict created --member \
 		--since "$full_year_since" --until "$until" | \
-ldtstool chart --output "ldts-by_month_by_member.png"
+ldtstool chart --output "fig-2.1-ldts-by_month_by_member.png"
 printf "."
 
 ldtstool dump | ldtstool filter --restrict created --member \
 		--since "$since" --until "$until" | \
-ldtstool piechart --by-member --output "ldts-by_member.png"
+ldtstool piechart --by-member --output "fig-2.2-ldts-by_member.png"
 printf "."
 
 ldtstool dump | ldtstool filter --restrict created --member \
 		--since "$full_year_since" --until "$until" | \
-ldtstool piechart --by-member --output "ldts-by_member-full_year.png"
+ldtstool piechart --by-member --output "fig-2.3-ldts-by_member-full_year.png"
 printf "."
 
 ldtstool dump | ldtstool filter --restrict created --member \
 		--since "$full_year_since" --until "$until" | \
-ldtstool chart --by-category --output "ldts-by_month_by_category.png"
+ldtstool chart --by-category --output "fig-2.4-ldts-by_month_by_category.png"
 printf "."
 
 ldtstool dump | ldtstool filter --restrict created --member \
 		--since "$since" --until "$until" | \
-ldtstool piechart --by-category --output "ldts-by_category.png"
+ldtstool piechart --by-category --output "fig-2.5-ldts-by_category.png"
 printf "."
 
 ldtstool dump | ldtstool filter --restrict created --member \
 		--since "$full_year_since" --until "$until" | \
-	ldtstool piechart --by-category --output "ldts-by_category-full_year.png"
+	ldtstool piechart --by-category --output "fig-2.6-ldts-by_category-full_year.png"
 printf "."
 
 ldtstool dump | ldtstool filter --restrict created --community \
 		--since "$full_year_since" --until "$until" | \
-ldtstool chart --by-category --output "community-by_month_by_category.png"
+ldtstool chart --by-category --output "fig-2.7-community-by_month_by_category.png"
 printf "."
 
 printf " done\n"
@@ -110,9 +119,9 @@ cat tmp/96boards.json | 96btool filter --since "$since" | 96btool monthly > tmp/
 printf " done\n"
 
 printf "Generating 96boards activity graphs ..."
-cat tmp/96boards.json | 96btool chart --output 96b_by_month.png
-cat tmp/96boards.json | 96btool piechart --output 96b_pie_of_the_year.png
-cat tmp/96boards.json | 96btool filter --since "$since" | 96btool piechart --output 96b_pie_of_the_month.png
+cat tmp/96boards.json | 96btool chart --output fig-3.1-96b_by_month.png
+cat tmp/96boards.json | 96btool piechart --output fig-3.3-96b_pie_of_the_year.png
+cat tmp/96boards.json | 96btool filter --since "$since" | 96btool piechart --output fig-3.2-96b_pie_of_the_month.png
 printf " done\n"
 
 #
@@ -236,14 +245,14 @@ over the past twelve months. The potential categories include:</p>
 <h2>Support via LDTS</h2>
 
 <p><table>
-<tr><td><img src="ldts-by_month_by_member.png"></td></tr>
+<tr><td><img src="fig-2.1-ldts-by_month_by_member.png"></td></tr>
   <tr><td><strong>Figure 2.1</strong>: Member tickets, organised by month and by member</td></tr>
 </table></p>
 
 <p><table>
   <tr>
-     <td><img src="ldts-by_member.png" width="400" height="300"></td>
-     <td><img src="ldts-by_member-full_year.png" width="400" height="300"></td>
+     <td><img src="fig-2.2-ldts-by_member.png" width="400" height="300"></td>
+     <td><img src="fig-2.3-ldts-by_member-full_year.png" width="400" height="300"></td>
   </tr>
   <tr>
      <td><strong>Figure 2.2</strong>: Activity this month, by member</td>
@@ -256,15 +265,15 @@ volumes. The three graph above shows the breakdown, by member, of
 tickets over the last twelve months.</p>
 
 <p><table>
-<tr><td><img src="ldts-by_month_by_category.png"></td></tr>
+<tr><td><img src="fig-2.4-ldts-by_month_by_category.png"></td></tr>
   <tr><td><strong>Figure 2.4</strong>: Member tickets, organised by month and by category</td></tr>
 </table></p>
 
 <p><table>
 <p><table>
   <tr>
-     <td><img src="ldts-by_category.png" width="400" height="300"></td>
-     <td><img src="ldts-by_category-full_year.png" width="400" height="300"></td>
+     <td><img src="fig-2.5-ldts-by_category.png" width="400" height="300"></td>
+     <td><img src="fig-2.6-ldts-by_category-full_year.png" width="400" height="300"></td>
   </tr>
   <tr>
      <td><strong>Figure 2.5</strong>: Activity this month, by category</td>
@@ -277,7 +286,7 @@ tickets this month. This helps guide us in choosing what skills the team
 must invest in.
 
 <p><table>
-<tr><td><img src="community-by_month_by_category.png"></td></tr>
+<tr><td><img src="fig-2.7-community-by_month_by_category.png"></td></tr>
   <tr><td><strong>Figure 2.7</strong>: Community tickets, organised by month and by category</td></tr>
 </table></p>
 
@@ -292,7 +301,7 @@ image.</p>
 <h2>96Boards Support</h2>
 
 <p><table>
-  <tr><td><img src="96b_by_month.png"></td></tr>
+  <tr><td><img src="fig-3.1-96b_by_month.png"></td></tr>
   <tr><td><strong>Figure 3.1</strong>: Posts by month and topic.</td></tr>
 </table></p>
 
@@ -303,8 +312,8 @@ of the SSE team.</p>
 
 <p><table>
   <tr>
-     <td><img src="96b_pie_of_the_month.png" width="400" height="300"></td>
-     <td><img src="96b_pie_of_the_year.png" width="400" height="300"></td>
+     <td><img src="fig-3.2-96b_pie_of_the_month.png" width="400" height="300"></td>
+     <td><img src="fig-3.3-96b_pie_of_the_year.png" width="400" height="300"></td>
   </tr>
   <tr>
      <td><strong>Figure 3.2</strong>: Posts this month, by topic.</td>
