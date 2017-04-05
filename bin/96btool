@@ -6,48 +6,35 @@
 Prerequisites (ubuntu:16.04):
 
  * sudo apt -y install python3 python3-pip
- * sudo apt -y install python3-iso8601 python3-lxml python3-requests-cache
+ * sudo apt -y install python3-iso8601
 
 Reminders of interesting threads for a weekly report:
 
-    96btool fetch --since 'next-friday -13 days' --nick danielt | \
-    96btool filter --until 'next-friday -1 week' | \
+    96btool pull --pipe | \
+    96btool filter \
+	--user danielt \
+	--since 'next-friday -13 days' \
+	--until 'next-friday -1 week' | \
     96btool weekly
-
-Create list of links in case the reminders are not enough:
-
-    96btool fetch --since 'next-friday -13 days' --nick danielt | \
-    96btool filter --until 'next-friday -1 week' | \
-    96btool format --template '{uri}' | cut -f1 -d'#' | sort -u
-
-
-If you want to develop the tool itself to pull additional information from
-the HTML you may need to experiment interactively with "real" HTML objects.
-Try:
-
-import requests
-from lxml import html
-page = requests.get('http://www.96boards.org/members/danielt/forums/replies')
-tree = html.fromstring(page.content)
-content = tree.xpath('//div[@class="bbp-reply-content"]')
-
 '''
 
 import argparse
 import collections
 import datetime
 import iso8601
-import hashlib
 import json
 import re
-import requests
 import subprocess
 import sys
+import pydiscourse
 import os
 import textwrap
 import time
-from lxml import html
-from lxml import etree
+import traceback
+
+import toys.chart as chart
+import toys.collect as collect
+import toys.config as config
 
 # If it's installed we'd rather use IPython for interaction...
 try:
@@ -57,90 +44,23 @@ except:
 	import pdb
 	interact = pdb.set_trace
 
-# Let's make the plotting tools optional (for those who only use glimpse
-# for their weekly report)
-try:
-	import matplotlib.pyplot as plt
-except:
-	pass
-
-# Try to enable caching
-try:
-        import requests_cache
-        requests_cache.install_cache()
-except:
-        # Provide a nop implementation
-        class requests_cache:
-                def __enter__(self):
-                        pass
-                def __exit__(self, exception_type, exception_value, traceback):
-                        pass
-                @staticmethod
-                def disabled():
-                        return requests_cache()
-
-def get_colour(s):
-	override = {
-		'lava' : 'orange',
-		'LAVA' : 'orange',
-		'96boards' : 'red',
-		'96Boards' : 'red',
-	}
-
-	if s in override:
-		return override[s]
-
-	return '#{}'.format(hashlib.md5(str(s).encode('UTF-8')).hexdigest()[-6:])
-
-def collect_by(things, categorize):
-	results = collections.defaultdict(list)
-	for t in things:
-		results[categorize(t)].append(t)
-	return results
-
-def collect_and_count_by(things, categorize, count=lambda t: 1):
-	results = collections.defaultdict(int)
-	for t in things:
-		results[categorize(t)] += count(t)
-	return results
-
-def stacked_bar_chart(things, filename, title=None, xlabel=None, ylabel=None):
-	x_labels = sorted(things.keys())
-
-	legend_labels = set()
-	for y in things.values():
-		legend_labels |= set(y.keys())
-	legend_labels = sorted(legend_labels)
-
-	plots = []
-	left = range(len(x_labels))
-
-	# Working in reverse order allows us to stack things so that the
-	# (alphabetic) legend is geometrically consistant with the stacks
-	# on the charts.
-	cumulative_height = [ 0 for x in x_labels ]
-	for y in sorted(legend_labels, reverse=True):
-		values = [ things[x][y] for x in x_labels ]
-		plots.append(plt.bar(left, values, 1,
-			bottom=cumulative_height, color=get_colour(y)))
-		cumulative_height = [ c+v for c, v in zip(cumulative_height,
-							  values) ]
-
-	# Now we must reverse plots in order to match it back up with the
-	# legend labels
-	plots.reverse()
-
-	if title:
-		plt.title(title)
-	if xlabel:
-		plt.xlabel(xlabel)
-	if ylabel:
-		plt.ylabel(ylabel)
-
-	plt.xticks([ x+0.5 for x in left ], x_labels, rotation=90)
-	lgd = plt.legend(plots, legend_labels, bbox_to_anchor=(1.05, 1), loc=2)
-	plt.savefig(filename, bbox_extra_artists=(lgd,), bbox_inches='tight')
-	plt.close()
+# To keep this up-to-date try:
+#   filter --grep "About the.*category"
+category_lookup = {
+	1: 'Uncategorized',
+	4: 'Staff',
+	5: 'General',
+	6: 'Specification',
+	7: 'Products',
+	9: 'HiKey',
+	10: 'DragonBoard410c',
+	11: 'Bubblegum-96',
+	13: 'MediaTek-X20',
+	15: 'Carbon',
+	16: 'Poplar Board',
+	17: 'Mezzanine Support',
+	18: 'OpenHours',
+}
 
 def parse_date(s, end_of_day=False):
 	'''Convert a string to a datetime object.
@@ -163,177 +83,243 @@ def parse_date(s, end_of_day=False):
 
 	return date.replace(tzinfo=iso8601.UTC)
 
-def get_replies(made_by, pageno=1):
-	#print('get_replies({}, {})'.format(made_by, pageno), file=sys.stderr)
-	with requests_cache.disabled():
-		page = requests.get('http://www.96boards.org/members/{}/forums/replies/page/{}/'.format(made_by, pageno))
-	if not page.ok:
-		return None
-	tree = html.fromstring(page.content)
+class Post(dict):
+	post_db = {}
+	topic_db = {}
+	user_db = {}
 
-	authors = tree.xpath('//a[@class="bbp-author-name"]/text()')
+	def created_at(self):
+		return iso8601.parse_date(self['created_at'])
 
-	contents = tree.xpath('//div[@class="bbp-reply-content"]')
-	contents = [ str(etree.tostring(c), 'utf-8') for c in contents ]
+	def lint(self):
+		'''Fix minor errors and inefficiencies with a post.
 
-	dates = tree.xpath('//span[@class="bbp-reply-post-date"]/text()')
-	dates = [ datetime.datetime.strptime(d,
-			'%B %d, %Y at %I:%M %p').replace(tzinfo=iso8601.UTC)
-			for d in dates ]
+		Returns true of the entire post should be discarded.
+		'''
+		if 'topic' in self:
+			Post.lint_topic(self['topic'])
 
-	links = tree.xpath('//a[@class="bbp-reply-permalink"]')
-	links = [ l.get('href') for l in links ]
+			# Many Linaro staff are admins with access to PMs but we
+			# never want to make local copies of these. This is
+			# mostly respect for privacy although, in truth, they
+			# would also confuse the statistics!
+			return self['topic']['archetype'] == 'private_message'
 
-	page_data = [ get_page_data(uri) for uri in links ]
-	if len(page_data):
-		(titles, descriptions, topics, origps) = zip(*page_data)
-	else:
-		(titles, descriptions, topics, origps) = ([], [], [], [])
+		return False
 
-	posts = [ { 'author': a, 'original_poster': o, 'date': d, 'subject': t, 'description': s, 'topic': p, 'uri': l, 'content': c }
-			for (a, o, d, t, s, p, l, c) in zip(authors, origps, dates, titles, descriptions, topics, links, contents)]
+	@staticmethod
+	def fetch(client, from_id, to_id, verbose=False):
+		for post_id in range(from_id, to_id):
+			try:
+				time.sleep(0.5)
+				post = client._get('/posts/{}.json'.format(post_id))
+				post = Post(post)
+				if post.lint():
+					if verbose:
+						sys.stdout.write('P')
+						sys.stdout.flush()
+					continue
 
-	return posts
+			except pydiscourse.exceptions.DiscourseClientError:
+				if verbose:
+					sys.stdout.write('E')
+					sys.stdout.flush()
+				continue
 
-def get_page_data(uri):
-	#print('get_page_data({})'.format(uri), file=sys.stderr)
+			result = '.'
 
-	page = requests.get(uri)
-	tree = html.fromstring(page.content)
-	titles = tree.xpath('//meta[@property="og:title"]')
-	authors = tree.xpath('//a[@class="bbp-author-name"]/text()')
+			if post['topic_id'] not in Post.topic_db:
+				time.sleep(0.1)
+				topic = client._get('/t/{}.json'.format(
+						post['topic_id']))
+				result = 'o'
+			else:
+				topic = Post.topic_db[post['topic_id']]
+			post['topic'] = topic
 
-	# There may be more than one title. At present these differ only in
-	# that some are post-fixed by the name of the blog. For that reason
-	# we grab the common prefix (os.path.commonprefix does not require
-	# that it be used on a path).
-	title = os.path.commonprefix([ t.get('content') for t in titles ])
+			post.lint()
+			post.index(post)
 
-	descriptions = tree.xpath('//meta[@property="og:description"]')
-	description = descriptions[0].get('content')
+			if verbose:
+				sys.stdout.write(result)
+				sys.stdout.flush()
 
-	path = [ p.strip() for p in description.split('»') ]
-	try:
-		path = path[path.index('Topics')+1:-1]
-	except:
-		path = ['Unclassified',]
+	@staticmethod
+	def index(posts):
+		if isinstance(posts, Post):
+			posts = (posts,)
+		for p in posts:
+			Post.post_db[p['id']] = p
+			if 'topic' in p:
+				Post.topic_db[p['topic_id']] = p['topic']
+			if 'username' in p:
+				Post.user_db[p['user_id']] = p['username']
 
-	if len(authors) >= 1:
-		original_poster = authors[0]
-	else:
-		original_poster = 'Anonymous'
+	@staticmethod
+	def latest(client):
+		# Grab the latest topics (we can use these to figure out the
+		# most recent post_id)
+		latest_topics = client.latest_topics()
 
-	return (title, description, path, original_poster)
+		# the 0th topic is the freshest and should have the largest
+		# post id
+		latest_topic_id = latest_topics['topic_list']['topics'][0]['id']
+		latest_topic = client._get('/t/{}.json'.format(latest_topic_id))
+		latest_post_id = max(latest_topic['post_stream']['stream'])
 
-def get_count_by_topic(posts):
-	count = collections.defaultdict(int)
-	for p in posts:
-		# The legend gets a little large if we include the path leading to
-		# each sub-forum... lets just use the sub-forum name.
-		#count['/'.join(p['topic'])] += 1
-		count[p['topic'][-1]] += 1
-	return count
+		# Having downloaded it we may as well cache it
+		Post.lint_topic(latest_topic)
+		Post.topic_db['latest_topic_id'] = latest_topic
 
-def get_count_by_month(posts):
-	count = collections.defaultdict(int)
-	for p in posts:
-		d = iso8601.parse_date(p['date'])
-		count['{:04d}-{:02d}'.format(d.year, d.month)] += 1
-	return count
+		return latest_post_id
+
+	@staticmethod
+	def lint_topic(t):
+		if 'post_stream' in t:
+			del t['post_stream']
+		if 'details' in t:
+			del t['details']
+		if 'category' not in t:
+			t['category'] = 'UNKNOWN'
+		if t['category'] == 'UNKNOWN':
+			if not t['category_id']:
+				t['category'] = 'None'
+			elif t['category_id'] in category_lookup:
+				t['category'] = category_lookup[t['category_id']]
+			else:
+				print('WARNING: Unknown category id: {}'.format(
+						t['category_id']),
+						file=sys.stderr)
+				t['category'] = 'UNKNOWN'
+		if 'username' not in t or t['username'] == 'unknown':
+			if t['user_id'] in Post.user_db:
+				t['username'] = Post.user_db[t['user_id']]
+			else:
+				t['username'] = 'unknown'
+		if 'uri' not in t:
+			t['uri'] = 'https://discuss.96boards.org/t/{}'.format(
+					t['slug'])
+
+		return t
+
+	@staticmethod
+	def load(obj):
+		if not obj:
+			data = json.load(sys.stdin)
+		elif isinstance(obj, str):
+			with open(obj, 'r') as f:
+				data = json.load(f)
+		else:
+			data = json.load(obj)
+
+		return [ Post(p) for p in data ]
 
 def do_chart(args):
-	posts = json.loads(sys.stdin.read())
+	'''Visualise the post data as a stacked bar chart'''
+	posts = Post.load(args.json)
 
-	by_month_by_topic = collect_by(posts,
-                lambda p: iso8601.parse_date(p['date']).strftime('%Y-%m'))
+	by_month_by_category = collect.accumulate_2d(posts,
+                lambda p: iso8601.parse_date(p['created_at']).strftime('%Y-%m'),
+		lambda p: p['topic']['category'])
 
-	for month in by_month_by_topic.keys():
-		by_month_by_topic[month] = collect_and_count_by(
-				by_month_by_topic[month],
-				lambda p: p['topic'][-1])
-
-	stacked_bar_chart(by_month_by_topic, args.output,
-			title = 'Posts by month and topic',
+	chart.stacked_barchart(by_month_by_category, args.output,
+			title = 'Posts by month and category',
 			ylabel = 'Number of posts')
 
 def do_count(args):
-	print(len(json.loads(sys.stdin.read())))
+	'''Count posts, potential organising them into categories first'''
+	posts = Post.load(args.json)
+	count = None
 
-def do_diffstat(args):
-	diffs = []
+	if args.by_category:
+		count = collect.accumulate(posts,
+				lambda x: x['topic']['category'])
 
-	decoder = json.JSONDecoder()
-	s = sys.stdin.read()
-	while s:
-		(d, i) = decoder.raw_decode(s)
-		diffs += [d,]
-		s = s[i:]
+	if args.by_user:
+		count = collect.accumulate(posts, lambda x: x['username'])
 
-	diffstat = diffs[0]
-	for newstat in diffs[1:]:
-		diffstat['startdate'] = diffstat['date']
-		diffstat['enddate'] = newstat['date']
-		del diffstat['date']
+	if count:
+		flat_count = [ (k, v) for k, v in count.items() ]
+		if args.rank:
+			flat_count = sorted(flat_count, key=lambda x: x[1], reverse=True)
+		else:
+			flat_count = sorted(flat_count, key=lambda x: x[0])
 
-		diffstat['topiccount'] = newstat['topiccount'] - diffstat['topiccount']
-		diffstat['replycount'] = newstat['replycount'] - diffstat['replycount']
+		if args.csv:
+			for k, v in flat_count:
+				print('"{}",{}'.format(k, v))
+		elif args.text:
+			for k, v in flat_count:
+				print('{:30} {}'.format(k, v))
+		else:
+			if args.rank:
+				count = flat_count
+			json.dump(count, sys.stdout, sort_keys=True, indent=2)
+	else:
+		print(len(posts))
 
-		by_title = {}
-		for d in newstat['forums'] + newstat['subforums']:
-			by_title[d['title']] = d
-
-		for d in diffstat['forums'] + diffstat['subforums']:
-			if d['title'] not in by_title:
-				d['topiccount'] = -1
-				d['replycount'] = -1
-			else:
-				d['topiccount'] = by_title[d['title']]['topiccount'] - d['topiccount']
-				d['replycount'] = by_title[d['title']]['replycount'] - d['replycount']
-
-		json.dump(diffstat, sys.stdout, indent=2)
-
-		diffstat = newstat
+def do_dump(args):
+	'''Dump the local database to standard output'''
+	with open(args.db) as f:
+		sys.stdout.write(f.read())
 
 def do_fetch(args):
+	'''Use discourse to search for matching topics (limited to <50)'''
 	since = parse_date(args.since)
+	after = since.strftime(' after:%Y-%m-%d')
 
-	if args.show_progress:
-		sys.stderr.write('.')
-		sys.stderr.flush()
-	posts = get_replies(args.nick)
+	cfg = config.get_config()
+	client = pydiscourse.DiscourseClient( cfg['96btool']['server'],
+			api_username=cfg['96btool']['username'],
+			api_key=config.get_password(cfg, '96btool'),
+			timeout=5)
 
-	# Fetch more pages until we reach the target date
-	pageno = 2
-	while posts[-1]['date'] > since:
-		if args.show_progress:
-			sys.stderr.write('.')
-			sys.stderr.flush()
+	results = client._get('/search.json', **{ 'q': args.query + after })
 
-		more = get_replies(args.nick, pageno)
-		if not more:
-			break
-		posts += more
-		pageno += 1
+	posts = results['posts']
+	if len(posts) == 50:
+		print("Too many results, limited to 50", file=sys.stderr)
 
-	# Filter out any posts that are too old
-	posts = [ p for p in posts if p['date'] > since ]
+	topics = {}
+	for post in posts:
+		topic_id = post['topic_id']
+		if topic_id not in topics:
+			topic = client._get('/t/{}.json'.format(topic_id))
+			del topic['post_stream']
+			del topic['details']
+			topics[topic_id] = topic
+		post['topic'] = topics[topic_id]
 
-	# Sort by date (the output of the blog tool is almost, but not quite,
-	# in reverse date order)
-	posts = sorted(posts, key=lambda k: k['date'])
+	# Sort by date
+	posts = sorted(posts, key=lambda k: k['created_at'])
 
-	for p in posts:
-		p['date'] = p['date'].isoformat()
-		p['id'] = p['uri'].split('-')[-1]
-		p['nick'] = args.nick
-		f = html.fragment_fromstring(p['content'])
-		p['text'] = f.text_content().strip()
-		p['wordcount'] = len(p['text'].split())
+	json.dump(posts, sys.stdout, indent=2)
 
-	json.dump(posts, sys.stdout)
+def do_filter(args):
+	'''Filter posts using various criteria (including date of post)'''
+	since = parse_date(args.since)
+	until = parse_date(args.until)
+
+	posts = Post.load(args.json)
+
+	posts = [ p for p in posts if iso8601.parse_date(p['created_at']) >= since ]
+	posts = [ p for p in posts if iso8601.parse_date(p['created_at']) < until ]
+
+	if args.user:
+		posts = [ p for p in posts if p['username'] == args.user ]
+
+	if args.grep:
+		e = re.compile(args.grep)
+		posts = [ p for p in posts if
+				re.search(e, p['topic']['title']) or
+				re.search(e, p['raw']) ]
+
+	json.dump(posts, sys.stdout, indent=2)
 
 def do_format(args):
-	for p in json.loads(sys.stdin.read()):
+	'''Summarize the data in a custom text format'''
+	posts = Post.load(args.json)
+	for p in posts:
 		ln = args.template
 		for m in re.finditer('{([^}:]+)([^}]*)}', args.template):
 			field = m.group(1)
@@ -341,7 +327,7 @@ def do_format(args):
 
 			try:
 				if 'shortdate' == field:
-					val = p['date'][:10]
+					val = p['created_at'][:10]
 				elif '-' in field:
 					(field, attr) = field.split('-', 1)
 					val = p[field][attr]
@@ -353,24 +339,21 @@ def do_format(args):
 			ln = ln.replace(m.group(0), '{{{}}}'.format(fmt).format(val))
 		print(ln)
 
-def do_merge(args):
-	decoder = json.JSONDecoder()
+def do_interact(args):
+	'''Directly interact with the JSON data'''
+	posts = Post.load(args.json)
+	post = posts[-1]
 
-	s = sys.stdin.read()
+	cfg = config.get_config()
+	client = pydiscourse.DiscourseClient( cfg['96btool']['server'],
+			api_username=cfg['96btool']['username'],
+			api_key=config.get_password(cfg, '96btool'),
+			timeout=5)
 
-	posts = []
-
-	while s:
-		(p, i) = decoder.raw_decode(s)
-		posts += p
-		s = s[i:]
-
-	# Sort by date (iso8601 strings can be directly compared)
-	posts = sorted(posts, key=lambda k: k['date'])
-
-	json.dump(posts, sys.stdout)
+	interact()
 
 def do_monthly(args):
+	'''Generate a monthly activity report'''
 	try:
 		with open(os.environ['HOME']+'/.96btool-highlight_nicks') as f:
 			hlnicks = json.load(f)
@@ -378,17 +361,17 @@ def do_monthly(args):
 		hlnicks = ()
 
 	digest = {}
-	for p in json.loads(sys.stdin.read()):
-		if p['subject'] not in digest:
-			digest[p['subject']] = p
+	for p in Post.load(args.json):
+		if p['topic']['title'] not in digest:
+			digest[p['topic']['title']] = p
 			p['count'] = 1
 		else:
-			digest[p['subject']]['count'] += 1
+			digest[p['topic']['title']]['count'] += 1
 
 	# Sort alphabetically by subject and re-index by topic
 	by_topic = collections.defaultdict(list)
 	for s in sorted(digest.keys()):
-		topic = ' - '.join(digest[s]['topic'])
+		topic = digest[s]['topic']['category']
 		by_topic[topic].append(digest[s])
 
 	print('''\
@@ -410,125 +393,127 @@ def do_monthly(args):
 			len(by_topic[t]), 's' if len(by_topic[t]) > 1 else ''))
 		print('<td><ul>')
 		for s in by_topic[t]:
-			if s['original_poster'] in hlnicks:
+			if s['topic']['username'] in hlnicks:
 				em = 'strong'
 			else:
 				em = 'em'
 			print('<li>{} by <{}>{}</{}> (<a href="{}">{} post{}</a>)</li>'.format(
-					s['subject'], em, s['original_poster'], em, s['uri'], s['count'], 's' if s['count'] > 1 else ''))
+					s['topic']['title'], em, s['topic']['username'], em, s['topic']['uri'], s['count'], 's' if s['count'] > 1 else ''))
 		print('</ul></td></tr>')
 	print('</table>')
 
-def add_percent_labels(labels, values):
-	total = sum(values)
-	return [ '{} ({:1.1f}%)'.format(l, 100 * (v / total)) for l, v in zip(labels, values) ]
+def do_passwd(args):
+	'''Store a password in the keyring'''
+	print("WARNING: This is *not* your forum password. It is an API key")
+	print("         issued to allow JSON access to discourse.")
+	cfg = config.get_config()
+	config.set_password(cfg, '96btool')
 
 def do_piechart(args):
-	count = get_count_by_topic(json.loads(sys.stdin.read()))
+	'''Visualise the post data as a pie chart'''
+	posts = Post.load(args.json)
+	count = collect.accumulate(posts, lambda p: p['topic']['category'])
+	chart.piechart(count, args.output, args.title)
 
-	labels = [ k for k in sorted(count.keys()) ]
-	counts = [ count[k] for k in labels ]
-	colours = [ get_colour(k) for k in labels ]
+def do_pull(args):
+	'''Update the local cache of the database'''
+	cfg = config.get_config()
+	client = pydiscourse.DiscourseClient( cfg['96btool']['server'],
+			api_username=cfg['96btool']['username'],
+			api_key=config.get_password(cfg, '96btool'),
+			timeout=5)
 
-	patches, texts = plt.pie(counts, colors=colours, startangle=90)
-	plt.legend(patches, add_percent_labels(labels, counts), loc="best")
-	plt.axis('equal')
-	if args.title:
-		plt.suptitle(args.title, fontsize=14)
-	plt.tight_layout()
-	plt.savefig(args.output)
-	plt.close()
+	if args.verbose:
+		sys.stdout.write('Reading existing post cache .')
+		sys.stdout.flush()
+	try:
+		posts = Post.load(args.db)
+		Post.index(posts)
 
-def do_filter(args):
-	since = parse_date(args.since)
-	until = parse_date(args.until)
+		if args.verbose:
+			sys.stdout.write('..')
+			sys.stdout.flush()
+	except (FileNotFoundError, ValueError):
+		if args.verbose:
+			sys.stdout.write('.. file not found -')
 
-	posts = json.loads(sys.stdin.read())
-
-	posts = [ p for p in posts if iso8601.parse_date(p['date']) >= since ]
-	posts = [ p for p in posts if iso8601.parse_date(p['date']) < until ]
-
-	json.dump(posts, sys.stdout)
-
-def do_stats(args):
-	if args.loop:
-		delta = datetime.timedelta(seconds=int(args.loop))
-		alarm = datetime.datetime.now() + delta
-		args.loop = None
-		while True:
-			do_stats(args)
-
-			now = datetime.datetime.now()
-			if now < alarm:
-				time.sleep((alarm - now).total_seconds())
-			alarm += delta
-
-	with requests_cache.disabled():
-		frontpage = requests.get('http://www.96boards.org/forums/')
-		unreplied = requests.get('http://www.96boards.org/forums/view/no-replies/')
-	if not frontpage.ok:
-		return None
-
-	now = datetime.datetime.now()
-	stats = {'date': now.isoformat("T"),
-		'subforums': [],
-		'forums': []}
-
-        #
-        # Handle front page
-        #
-
-	tree = html.fromstring(frontpage.content)
-
-	titles = tree.xpath('//a[@class="bbp-forum-title"]/text()')
-	topiccounts = [ c.strip() for c in
-			tree.xpath('//li[@class="bbp-forum-topic-count"]/text()')
-			]
-	topiccounts = [ int(c.replace(',', '')) for c in topiccounts[1::2] ]
-	replycounts = [ c.strip() for c in
-			tree.xpath('//li[@class="bbp-forum-reply-count"]/text()')
-			]
-	replycounts = [ int(c.replace(',', '')) for c in replycounts[1::2] ]
-
-	stats['forums'] = [ { 'title': t, 'topiccount': c, 'replycount': r }
-			for (t, c, r) in zip(titles, topiccounts, replycounts) ]
-
-	stats['topiccount'] = sum(topiccounts)
-	stats['replycount'] = sum(replycounts)
-
-	subforums = tree.xpath('//a[@class="bbp-forum-link"]/text()')
-	for s in subforums:
-		(name, topics, posts) = re.match('(.*)[(]([0-9,]+) ([0-9,]+)[)]', s).groups()
-
-		stats['subforums'].append({
-			'title': name.strip(),
-			'topiccount': int(topics.replace(',', '')),
-			'replycount': int(posts.replace(',', ''))})
-
-	#
-        # Handle unreplied topics
-	#
-
-	tree = html.fromstring(unreplied.content)
-	counts = tree.xpath('//div[@class="bbp-pagination-count"]/text()')
-	stats['unreplied'] = int(
-			re.search('\of ([0-9]+) total\)', counts[0]).group(1))
-
-
-	#
-	# Emit the data
-	#
-
-	if args.organise:
-		os.makedirs(now.strftime('%Y/%m/%d'), exist_ok=True)
-		with open(now.strftime('%Y/%m/%d/%H:%M:%S.json'), 'w') as f:
-			json.dump(stats, f, indent=2)
-		print('{}{:10}{:10}'.format(stats['date'][0:19],
-				stats['topiccount'], stats['replycount']))
+	if len(Post.post_db) and not args.refresh:
+		max_post_id = max([ i for i in Post.post_db.keys() ])
 	else:
-		json.dump(stats, sys.stdout, indent=2)
+		max_post_id = 0
+
+	# Grab the latest topics (we can use these to figure out the
+	# most recent post_id)
+	if args.verbose:
+		print(' {} posts'.format(len(Post.post_db)))
+		sys.stdout.write('Looking at the latest topics ...')
+		sys.stdout.flush()
+	latest_post_id = Post.latest(client)
+
+	# Start grabbing the posts
+	if args.verbose:
+		sys.stdout.write(' ok\nFetching posts from #{} to #{} .'.format(
+				max_post_id + 1, latest_post_id))
+		sys.stdout.flush()
+	try:
+		# fetch automatically indexes as it works so we can ignore
+		# the return value here...
+		Post.fetch(client, max_post_id+1, latest_post_id+1,
+				verbose=args.verbose)
+		retval = 0
+
+	except BaseException as e:
+		if args.verbose:
+			sys.stdout.write(' abort (and save progress)\n')
+		if args.debug:
+			traceback.print_exc()
+		else:
+			print('ERROR: {} ...'.format(str(e)), file=sys.stderr)
+		retval = 1
+	finally:
+		# Final tidy up (reconstruct posts from the post_db)
+		if args.verbose:
+			sys.stdout.write(
+				' ok\nPerforming final cleanup ...'.format(
+					retval))
+			sys.stdout.flush()
+		posts = [ Post.post_db[k] for k in sorted(Post.post_db.keys()) ]
+
+		with open(args.db, 'w') as f:
+			json.dump(posts, f, sort_keys=True, indent=2)
+
+		if args.verbose:
+			print(' ok')
+
+	if args.pipe:
+		json.dump(posts, sys.stdout, indent=2)
+
+	return retval
+
+def do_refresh(args):
+	'''Refresh the local database and fix minor integrity errors'''
+	cfg = config.get_config()
+	client = pydiscourse.DiscourseClient( cfg['96btool']['server'],
+			api_username=cfg['96btool']['username'],
+			api_key=config.get_password(cfg, '96btool'),
+			timeout=5)
+
+	posts = Post.load(args.db)
+	Post.index(posts)
+
+	# TODO: try to download any missing post ids
+
+	for p in posts:
+		if p.lint():
+			del Post.post_db[p['id']]
+
+	posts = [ Post.post_db[k] for k in sorted(Post.post_db.keys()) ]
+
+	with open(args.db, 'w') as f:
+		json.dump(posts, f, sort_keys=True, indent=2)
 
 def do_weekly(args):
+	'''Generate a detailed weekly activity report'''
 	wrappers = (
 		textwrap.TextWrapper(),
 		textwrap.TextWrapper(initial_indent=' * ', subsequent_indent='   '),
@@ -541,8 +526,8 @@ def do_weekly(args):
 	wrap("96Boards forum activity", level=1)
 
 	summary = collections.defaultdict(int)
-	for p in json.loads(sys.stdin.read()):
-		summary[p['subject']] += 1
+	for p in Post.load(args.json):
+		summary[p['topic']['title']] += 1
 
 	for s in sorted(summary.keys()):
 		if summary[s] == 1:
@@ -551,66 +536,97 @@ def do_weekly(args):
 			wrap('{} ({} posts)'.format(s, summary[s]), level=2)
 
 def main(argv):
+	defaultdb=os.path.dirname(os.path.realpath(sys.argv[0])) + '/../96btool.db'
+
 	parser = argparse.ArgumentParser()
 	subparsers = parser.add_subparsers(dest='sub-command')
 	subparsers.required = True	# Can't be set using named arguments (yet)
 
-	s = subparsers.add_parser('chart')
+	def new_parser(f, no_json_arg=False):
+		assert(f.__name__.startswith('do_'))
+		name = f.__name__[3:]
+		helptext = f.__doc__
+		s = subparsers.add_parser(name, help=helptext)
+		s.set_defaults(func=f)
+		if not no_json_arg:
+			s.add_argument('json', nargs='?',
+					help='Read data from this file')
+
+		return s
+
+	s = new_parser(do_chart)
 	s.add_argument("--output", default="96btool.png")
-	s.set_defaults(func=do_chart)
 
-	s = subparsers.add_parser('count')
-	s.set_defaults(func=do_count)
+	s = new_parser(do_count)
+	s.add_argument('--csv', action='store_true',
+		       help="Show the count data as CSV")
+	s.add_argument('--by-category', action='store_true',
+			help="Count posts in each category")
+	s.add_argument('--by-user', action='store_true',
+			help="Count posts by each user")
+	s.add_argument('--rank', action='store_true',
+			help="Sort the data into reverse numeric order")
+	s.add_argument('--text', action='store_true',
+			help="Show results in plain text")
 
-	s = subparsers.add_parser('diffstat')
-	s.set_defaults(func=do_diffstat)
+	s = new_parser(do_dump, no_json_arg=True)
+	s.add_argument('--db', default=defaultdb,
+		       help="File to update")
 
-	s = subparsers.add_parser('fetch')
-	s.add_argument("--nick", default="danielt",
+	s = new_parser(do_fetch, no_json_arg=True)
+	s.add_argument("--query", default="@danielt",
 		        help="Nickname to fetch replies from");
 	s.add_argument("--since", default="2012-01-01",
 			help="When to gather information from")
-	s.add_argument("--show-progress", action="store_true",
-                        help="Show signs of progress whilst running")
-	s.set_defaults(func=do_fetch)
 
-	s = subparsers.add_parser('format')
-	s.add_argument("--template",
-			default="{id}: {subject} ({nick})")
-	s.set_defaults(func=do_format)
-
-	s = subparsers.add_parser('merge')
-	s.set_defaults(func=do_merge)
-
-	s = subparsers.add_parser('monthly')
-	s.set_defaults(func=do_monthly)
-
-	s = subparsers.add_parser('piechart')
-	s.add_argument("--title", default=None)
-	s.add_argument("--output", default="96btool.png")
-	s.set_defaults(func=do_piechart)
-
-	s = subparsers.add_parser('filter')
+	s = new_parser(do_filter)
+	s.add_argument("--grep",
+			help="Search for a string within a post")
 	s.add_argument("--since", default="2012-01-01",
 			help="When to gather information from")
 	s.add_argument("--until", default="tomorrow",
-			help="When to stop gathering information")
-	s.set_defaults(func=do_filter)
+			help="When to stop gathering .information")
+	s.add_argument("--user", help="Select only posts by this user")
 
-	s = subparsers.add_parser('stats')
-	s.add_argument('--loop')
-	s.add_argument('--organise', action='store_true')
-	s.set_defaults(func=do_stats)
+	s = new_parser(do_format)
+	s.add_argument("--template",
+			default="{id}: {topic-title} ({username})")
 
-	s = subparsers.add_parser('summary')
+	s = new_parser(do_interact)
+	s.add_argument("json", nargs='?', default=defaultdb)
+
+	s = new_parser(do_monthly)
+
+	s = new_parser(do_passwd, no_json_arg=True)
+
+	s = new_parser(do_piechart)
+	s.add_argument("--title", default=None)
+	s.add_argument("--output", default="96btool.png")
+
+	s = new_parser(do_pull, no_json_arg=True)
+	s.add_argument('--debug', action='store_true',
+		       help="Extra diagnostics")
+	s.add_argument('--db', default=defaultdb,
+		       help="File to update")
+	s.add_argument('--pipe', action='store_true',
+		       help="Duplicate output on stdout")
+	s.add_argument('--refresh', action='store_true',
+		       help="Try to fetch posts missing due to previous errors")
+	s.add_argument('--verbose', action='store_true',
+		       help="Show internal workings")
+
+	s = new_parser(do_refresh, no_json_arg=True)
+	s.add_argument('--db', default=defaultdb,
+		       help="File to update")
+
+	s = subparsers.add_parser('summary', help=do_format.__doc__)
 	s.set_defaults(func=do_format,
-		       template="{shortdate}: {subject} ({nick})")
+		       template="{shortdate}: {topic-title} ({username})")
 
-	s = subparsers.add_parser('weekly')
-	s.set_defaults(func=do_weekly)
+	s = new_parser(do_weekly)
 
 	args = parser.parse_args(argv[1:])
-	args.func(args)
+	return args.func(args)
 
 if __name__ == "__main__":
 	try:

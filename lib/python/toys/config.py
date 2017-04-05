@@ -41,7 +41,17 @@ def get_config():
 	if 'username' not in cfg['jira']:
 		cfg['jira']['username'] = 'daniel.thompson@linaro.org'
 
-	if zendesk_orig != cfg['zendesk'] or jira_orig != cfg['jira']:
+	if '96btool' not in cfg:
+		cfg['96btool'] = {}
+	l96btool_orig = dict(cfg['96btool'])
+	if 'server' not in cfg['96btool']:
+		cfg['96btool']['server'] = 'https://discuss.96boards.org'
+	if 'username' not in cfg['96btool']:
+		cfg['96btool']['username'] = 'danielt'
+
+	if zendesk_orig != cfg['zendesk'] or \
+	   jira_orig != cfg['jira'] or \
+	   l96btool_orig != cfg['96btool']:
 		with open(filename, 'w') as f:
 			cfg.write(f)
 		print('{} was updated. Please check and re-run.'.format(filename),
