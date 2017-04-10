@@ -669,6 +669,8 @@ def main(argv):
 	s = subparsers.add_parser('summary', help=do_format.__doc__)
 	s.set_defaults(func=do_format,
 		       template="{shortdate}: {topic-title} ({username})")
+	s.add_argument('json', nargs='?',
+			help='Read data from this file')
 
 	s = new_parser(do_weekly)
 
