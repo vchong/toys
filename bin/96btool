@@ -333,6 +333,24 @@ def do_filter(args):
 	if args.user:
 		posts = [ p for p in posts if p['username'] == args.user ]
 
+	if args.first_post:
+		# Opps. We stripped out the post stream so this test ends up more
+		# complex than it needs to be...
+		def is_first_post(p):
+			# If the topic was created by a different user
+			# this cannot be the first post
+			if p['username'] != p['topic']['username']:
+				return False
+
+			# If the post was made >10 seconds after the topic was created
+			# then its not the first post either.
+			topic_created_at = iso8601.parse_date(p['topic']['created_at'])
+			cut_off_time = topic_created_at + datetime.timedelta(seconds=10)
+			post_created_at = p.created_at()
+			return post_created_at < cut_off_time
+
+		posts = [ p for p in posts if is_first_post(p) ]
+
 	if args.grep:
 		e = re.compile(args.grep)
 		posts = [ p for p in posts if
@@ -646,6 +664,8 @@ def main(argv):
 			help="When to gather information from")
 
 	s = new_parser(do_filter)
+	s.add_argument("--first-post", action='store_true',
+			help="Discard replies; keep only the first post in each topic")
 	s.add_argument("--grep",
 			help="Search for a string within a post")
 	s.add_argument("--since", default="2012-01-01",
