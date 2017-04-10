@@ -10,18 +10,30 @@
 # General prep
 #
 
-if true
+if [ "$1" == "yearly" ]
 then
-	day=`date +'%-d'`
-	since=`date -d"last-month -$(($day - 1)) days 00:00:00" +"%Y-%m-%d %H:%M:%S"`
-	until=`date -d"-$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
-	full_year_since=`date -d"-$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
-else
 	day=`date +'%-d'`
 	since=`date -d"-$(($day - 1)) days 00:00:00" +"%Y-%m-%d %H:%M:%S"`
 	until=`date -d"next-month -$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
 	full_year_since=`date -d"next-month -$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
 	since=$full_year_since
+	tag="yearly"
+	quantum="year"
+elif [ "$1" == "quarterly" ]
+then
+	day=`date +'%-d'`
+	since=`date -d"last-month -$(($day - 1)) days -2 month 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	until=`date -d"-$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
+	full_year_since=`date -d"-$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	tag="quarterly"
+	quantum="quarter"
+else # monthly
+	day=`date +'%-d'`
+	since=`date -d"last-month -$(($day - 1)) days 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	until=`date -d"-$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
+	full_year_since=`date -d"-$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	tag="monthly"
+	quantum="month"
 fi
 
 echo "Generating report from $since until $until"
@@ -30,6 +42,11 @@ echo
 if [ -z $SSE_DATA_DIR ]
 then
 	SSE_DATA_DIR=reports/`date -d "$until" +"%Y-%m"`
+
+	if [ ! -z $1 ]
+	then
+		SSE_DATA_DIR=$SSE_DATA_DIR-$tag
+	fi
 fi
 
 mkdir -p $SSE_DATA_DIR/tmp
@@ -105,23 +122,32 @@ printf " done\n"
 # Slurp up posts by the team on the forum
 #
 
+# The output of pull --verbose is naturally compatible with our own output
+96btool pull --verbose
+
+96btool dump | 96btool filter --since "$full_year_since" \
+			      --until "$until" > tmp/96boards-all.json
+
 for i in danielt ldts ldts-atsuka leo-yan vchong
 do
-	printf "Grabbing 96Boards data for $i ."
-	[ -e tmp/96b-$i.json ] || \
-	    96btool fetch --nick $i --since "$full_year_since" --show-progress > tmp/96b-$i.json
+	printf "Grabbing 96Boards data for $i ..."
+	cat tmp/96boards-all.json | 96btool filter --user $i > tmp/96b-$i.json
 	printf " %d posts\n" `cat tmp/96b-$i.json | 96btool filter --since "$since" --until "$until" | 96btool count`
 done
 
 printf "Generating 96boards activity report ..."
-cat tmp/96b-*.json | 96btool merge | 96btool filter --until "$until" > tmp/96boards.json
+cat tmp/96b-*.json | 96btool merge > tmp/96boards.json
 cat tmp/96boards.json | 96btool filter --since "$since" | 96btool monthly > tmp/96boards.html
+
 printf " done\n"
 
 printf "Generating 96boards activity graphs ..."
 cat tmp/96boards.json | 96btool chart --output fig-3.1-96b_by_month.png
 cat tmp/96boards.json | 96btool piechart --output fig-3.3-96b_pie_of_the_year.png
 cat tmp/96boards.json | 96btool filter --since "$since" | 96btool piechart --output fig-3.2-96b_pie_of_the_month.png
+cat tmp/96boards-all.json | 96btool chart --output fig-3.4-96b_by_month.png
+cat tmp/96boards-all.json | 96btool piechart --output fig-3.6-96b_pie_of_the_year.png
+cat tmp/96boards-all.json | 96btool filter --since "$since" | 96btool piechart --output fig-3.5-96b_pie_of_the_month.png
 printf " done\n"
 
 #
@@ -130,7 +156,7 @@ printf " done\n"
 
 printf "\nGenerating report ..."
 
-cat > monthly_report.html <<EOF
+cat > ${tag}_report.html <<EOF
 <html>
 <head>
 <title>LSSE `date -d "$until" +"%Y.%m"` Monthly Report</title>
@@ -155,7 +181,7 @@ cat > monthly_report.html <<EOF
      <td><img src="cards_per_member-full_year.png" width="400" height="300"></td>
   </tr>
   <tr>
-     <td><strong>Figure 1.2</strong>: Issues worked on this month</td>
+     <td><strong>Figure 1.2</strong>: Issues worked on this $quantum</td>
      <td><strong>Figure 1.3</strong>: Issues worked on over the last 12 months.</td>
   </tr>
 </table></p>
@@ -163,7 +189,7 @@ cat > monthly_report.html <<EOF
 <p>Figure 1.1 shows the new issues vs completed issues tackled by the SSE
 team during the previous months. Each issue represents a unit of work
 that is visible to a member. Figures 1.2 and 1.3 show the issues that
-have been worked on this month which members the work was for. None of
+have been worked on this $quantum which members the work was for. None of
 the above graphs indicate the level of effort invested by the team,
 instead they should represent units of work that the member is aware
 of us completing.</p>
@@ -179,7 +205,7 @@ of us completing.</p>
      <td><img src="effort_per_member-full_year.png" width="400" height="300">
   </tr>
   <tr>
-     <td><strong>Figure 1.5</strong>: Effort for each member this month</td>
+     <td><strong>Figure 1.5</strong>: Effort for each member this $quantum</td>
      <td><strong>Figure 1.6</strong>: Effort for each member over the last 12 months</td>
   </tr>
 </table></p>
@@ -203,12 +229,12 @@ breakdown as a contrast.</p>
      <td><img src="effort_by_category-full_year.png" width="400" height="300">
   </tr>
   <tr>
-     <td><strong>Figure 1.8</strong>: Effort this month, by category</td>
+     <td><strong>Figure 1.8</strong>: Effort this $quantum, by category</td>
      <td><strong>Figure 1.9</strong>: Effort over last 12 months, by category</td>
   </tr>
 </table></p>
 
-<p>The graph and pie charts above show the effort expended this month
+<p>The graph and pie charts above show the effort expended this $quantum
 organised by the type of work undertaken and contrasts it with trends
 over the past twelve months. The potential categories include:</p>
 <p>
@@ -255,7 +281,7 @@ over the past twelve months. The potential categories include:</p>
      <td><img src="fig-2.3-ldts-by_member-full_year.png" width="400" height="300"></td>
   </tr>
   <tr>
-     <td><strong>Figure 2.2</strong>: Activity this month, by member</td>
+     <td><strong>Figure 2.2</strong>: Activity this $quantum, by member</td>
      <td><strong>Figure 2.3</strong>: Activity this year, by member</td>
   </tr>
 </table></p>
@@ -276,13 +302,13 @@ tickets over the last twelve months.</p>
      <td><img src="fig-2.6-ldts-by_category-full_year.png" width="400" height="300"></td>
   </tr>
   <tr>
-     <td><strong>Figure 2.5</strong>: Activity this month, by category</td>
+     <td><strong>Figure 2.5</strong>: Activity this $quantum, by category</td>
      <td><strong>Figure 2.6</strong>: Activity this year, by category</td>
   </tr>
 </table></p>
 
 The graph (fig 2.4) and piecharts (fig 2.5 & fig 2.6) show the member
-tickets this month. This helps guide us in choosing what skills the team
+tickets this $quantum. This helps guide us in choosing what skills the team
 must invest in.
 
 <p><table>
@@ -300,9 +326,11 @@ image.</p>
 <p><table>
 <h2>96Boards Support</h2>
 
+<h3>SSE contributions to 96Boards forum</h3>
+
 <p><table>
   <tr><td><img src="fig-3.1-96b_by_month.png"></td></tr>
-  <tr><td><strong>Figure 3.1</strong>: Posts by month and topic.</td></tr>
+  <tr><td><strong>Figure 3.1</strong>: Posts by month and topic (posts by SSE engineers only).</td></tr>
 </table></p>
 
 <p>Figure 3.1 shows the post volumes by SSE team members for the last year.
@@ -316,10 +344,35 @@ of the SSE team.</p>
      <td><img src="fig-3.3-96b_pie_of_the_year.png" width="400" height="300"></td>
   </tr>
   <tr>
-     <td><strong>Figure 3.2</strong>: Posts this month, by topic.</td>
+     <td><strong>Figure 3.2</strong>: Posts this $quantum, by topic.</td>
      <td><strong>Figure 3.3</strong>: Posts this year, by topic.</td>
   </tr>
 </table></p>
+
+<p>Figures 3.2 and 3.3 contrast the period under review with the full year trend, showing the variety of topics SSE engineers have contributed to.</p>
+
+<h3>Overall trends on the forum</h3>
+
+<p><table>
+  <tr><td><img src="fig-3.4-96b_by_month.png"></td></tr>
+  <tr><td><strong>Figure 3.4</strong>: Posts by month and topic (all posts).</td></tr>
+</table></p>
+
+<p><table>
+  <tr>
+     <td><img src="fig-3.5-96b_pie_of_the_month.png" width="400" height="300"></td>
+     <td><img src="fig-3.6-96b_pie_of_the_year.png" width="400" height="300"></td>
+  </tr>
+  <tr>
+     <td><strong>Figure 3.5</strong>: Posts this $quantum, by topic.</td>
+     <td><strong>Figure 3.6</strong>: Posts this year, by topic.</td>
+  </tr>
+</table></p>
+
+Figures 3.4, 3.5 and 3.6 contract the previous figures (3.1 to 3.3) with
+statistics describing all posts on the 96Boards forum. In particular this
+allows us to start to compare board popularity versus the effort SSE applies
+to the board.
 
 <h1>Detailed activity report</h1>
 
@@ -339,4 +392,4 @@ of the SSE team.</p>
 </html>
 EOF
 
-printf " $SSE_DATA_DIR/monthly_report.html\n"
+printf " $SSE_DATA_DIR/${tag}_report.html\n"
