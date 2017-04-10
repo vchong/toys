@@ -524,6 +524,7 @@ def do_pull(args):
 			sys.stdout.flush()
 		posts = [ Post.post_db[k] for k in sorted(Post.post_db.keys()) ]
 
+		os.rename(args.db, args.db + '.bak')
 		with open(args.db, 'w') as f:
 			json.dump(posts, f, sort_keys=True, indent=2)
 
@@ -573,6 +574,7 @@ def do_refresh(args):
 	finally:
 		posts = [ Post.post_db[k] for k in sorted(Post.post_db.keys()) ]
 
+		os.rename(args.db, args.db + '.bak')
 		with open(args.db, 'w') as f:
 			json.dump(posts, f, sort_keys=True, indent=2)
 
