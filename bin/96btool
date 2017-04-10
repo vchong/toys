@@ -60,6 +60,7 @@ category_lookup = {
 	16: 'Poplar Board',
 	17: 'Mezzanine Support',
 	18: 'OpenHours',
+	19: 'DragonBoard820c'
 }
 
 def parse_date(s, end_of_day=False):
