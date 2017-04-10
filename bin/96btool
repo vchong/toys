@@ -87,16 +87,27 @@ def parse_date(s, end_of_day=False):
 class Post(dict):
 	post_db = {}
 	topic_db = {}
+	username_db = {}
 	user_db = {}
 
 	def created_at(self):
 		return iso8601.parse_date(self['created_at'])
+
+	def get_user(self, client):
+		if self['username'] not in Post.user_db:
+			time.sleep(0.1)
+			Post.user_db[self['username']] = client.user(self['username'])
+		self['user'] = Post.user_db[self['username']]
+		return self['user']
 
 	def lint(self):
 		'''Fix minor errors and inefficiencies with a post.
 
 		Returns true of the entire post should be discarded.
 		'''
+		if 'user' in self:
+			Post.lint_user(self['user'])
+
 		if 'topic' in self:
 			Post.lint_topic(self['topic'])
 
@@ -138,6 +149,8 @@ class Post(dict):
 				topic = Post.topic_db[post['topic_id']]
 			post['topic'] = topic
 
+			post.get_user(client)
+
 			post.lint()
 			post.index(post)
 
@@ -154,7 +167,9 @@ class Post(dict):
 			if 'topic' in p:
 				Post.topic_db[p['topic_id']] = p['topic']
 			if 'username' in p:
-				Post.user_db[p['user_id']] = p['username']
+				Post.username_db[p['user_id']] = p['username']
+			if 'user' in p:
+				Post.user_db[p['user_id']] = p['user']
 
 	@staticmethod
 	def latest(client):
@@ -193,8 +208,8 @@ class Post(dict):
 						file=sys.stderr)
 				t['category'] = 'UNKNOWN'
 		if 'username' not in t or t['username'] == 'unknown':
-			if t['user_id'] in Post.user_db:
-				t['username'] = Post.user_db[t['user_id']]
+			if t['user_id'] in Post.username_db:
+				t['username'] = Post.username_db[t['user_id']]
 			else:
 				t['username'] = 'unknown'
 		if 'uri' not in t:
@@ -202,6 +217,15 @@ class Post(dict):
 					t['slug'])
 
 		return t
+
+	@staticmethod
+	def lint_user(u):
+		'''Drop all info about a user except for a narrow whitelist'''
+		keep = ( 'email', 'id', 'name', 'username', 'website' )
+		for k in list(u):
+			if k not in keep:
+				del u[k]
+		return u
 
 	@staticmethod
 	def load(obj):
@@ -502,16 +526,35 @@ def do_refresh(args):
 	posts = Post.load(args.db)
 	Post.index(posts)
 
+	if args.users:
+		with open(args.users, 'r') as f:
+			users = json.load(f)
+		for u in users:
+			Post.user_db[u['username']] = u
+
 	# TODO: try to download any missing post ids
 
-	for p in posts:
-		if p.lint():
-			del Post.post_db[p['id']]
+	try:
+		for p in posts:
+			if args.users:
+				if p['username'] not in Post.user_db:
+					print('No info for user {}'.format(p['username']), file=sys.stderr)
+				else:
+					p['user'] = Post.user_db[p['username']]
+			else:
+				if 'user' not in p and p['username']:
+					if args.verbose and p['username'] not in Post.user_db:
+						print('Refreshing user {}'.format(p['username']), file=sys.stderr)
+					p.get_user(client)
+			if p.lint():
+				del Post.post_db[p['id']]
+	except BaseException as e:
+		traceback.print_exc()
+	finally:
+		posts = [ Post.post_db[k] for k in sorted(Post.post_db.keys()) ]
 
-	posts = [ Post.post_db[k] for k in sorted(Post.post_db.keys()) ]
-
-	with open(args.db, 'w') as f:
-		json.dump(posts, f, sort_keys=True, indent=2)
+		with open(args.db, 'w') as f:
+			json.dump(posts, f, sort_keys=True, indent=2)
 
 def do_weekly(args):
 	'''Generate a detailed weekly activity report'''
@@ -619,6 +662,9 @@ def main(argv):
 	s = new_parser(do_refresh, no_json_arg=True)
 	s.add_argument('--db', default=defaultdb,
 		       help="File to update")
+	s.add_argument('--verbose', action='store_true',
+		       help="Show internal workings")
+	s.add_argument('--users', help='Use a local copy of the user list')
 
 	s = subparsers.add_parser('summary', help=do_format.__doc__)
 	s.set_defaults(func=do_format,
