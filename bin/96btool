@@ -377,6 +377,26 @@ def do_interact(args):
 
 	interact()
 
+def do_merge(args):
+	'''Read multiple concatenated JSON files and merge into one'''
+	decoder = json.JSONDecoder()
+
+	s = sys.stdin.read()
+
+	posts = []
+
+	while s:
+		(p, i) = decoder.raw_decode(s)
+		posts += p
+		s = s[i:]
+
+	# De-duplicate and sort by id
+	posts = [ Post(p) for p in posts ]
+	Post.index(posts)
+	posts = [ Post.post_db[k] for k in sorted(Post.post_db.keys()) ]
+
+	json.dump(posts, sys.stdout, sort_keys=True, indent=2)
+
 def do_monthly(args):
 	'''Generate a monthly activity report'''
 	try:
@@ -638,6 +658,8 @@ def main(argv):
 
 	s = new_parser(do_interact)
 	s.add_argument("json", nargs='?', default=defaultdb)
+
+	s = new_parser(do_merge, no_json_arg=True)
 
 	s = new_parser(do_monthly)
 
