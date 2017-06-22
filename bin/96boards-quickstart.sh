@@ -10,6 +10,12 @@ repo=https://git.linaro.org/people/daniel.thompson/toys.git && \
 wget $repo/plain/bin/96boards-quickstart.sh && \
 bash -x 96boards-quickstart.sh
 
+if [ "root" = "$USER" ]
+then
+	chmod a+rx /root
+	exec su linaro -c "bash -x $0"
+fi
+
 # This is only temporary...
 setxkbmap gb
 
@@ -17,7 +23,7 @@ setxkbmap gb
 echo "Need a new password for root user..."
 sudo passwd root
 echo "Need a new password for 'linaro' user..."
-passwd
+sudo passwd linaro
 
 # Allow root SSH login (useful for make modules_install via sshfs)
 sudo sed -ie 's/PermitRootLogin without-password/PermitRootLogin yes/' \
