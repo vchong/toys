@@ -20,19 +20,43 @@ fi
 
 if [ ! -z $DISPLAY ]
 then
+	echo "DISPLAY=$DISPLAY"
 	# We have display set but lets make sure we haven't been asked to
 	# run in a fullscreen tmux session
 	if [ ! -z $TMUX ] && tmux show -gv @fullscreen > /dev/null 2> /dev/null
 	then
-		cmd="tmux split-window"
+		# There's possibility if 2 calls come in almost simult-y
+		# both will see (or not) ~/fubar
+		# causing both windows 2b vert or hort :(
+		if [ -e ~/fubar ]
+		then
+			echo "~/fubar found so delete"
+			rm -f ~/fubar
+			cmd="tmux split-window"
+		else
+			echo "~/fubar not found so create"
+			touch ~/fubar
+			cmd="tmux split-window -h"
+		fi
 		cmd_e=""
 	else
+		echo "tmux is fullscreen"
 		cmd="gnome-terminal"
 		cmd_e="--command "
 	fi
 elif [ ! -z $TMUX ]
 then
-	cmd="tmux split-window"
+	echo "TMUX=$TMUX"
+	if [ -e ~/fubar ]
+	then
+		echo "~/fubar found so delete"
+		rm -f ~/fubar
+		cmd="tmux split-window"
+	else
+		echo "~/fubar not found so create"
+		touch ~/fubar
+		cmd="tmux split-window -h"
+	fi
 	cmd_e=""
 else
 	echo "xterm: This environment can not support xterm emulation" >&2
