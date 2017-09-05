@@ -408,7 +408,7 @@ class Ticket(dict):
 		password = keyring.get_password(cfg['server'], cfg['username'])
 		zd = zdesk.Zendesk(cfg['server'], cfg['username'], password)
 
-		tickets = [ Ticket(t) for t in zd.tickets_list(get_all_pages=True)['tickets'] ] 
+		tickets = [ Ticket(t) for t in zd.tickets_list(get_all_pages=True)['tickets'] ]
 
 		# Filter by date as early as possible so we can reduce network round trips
 		tickets = [ t for t in tickets if t.is_within_date(since, until) ]
@@ -553,7 +553,7 @@ def do_filter(args):
 		data = [ t for t in data if t.updated_at() < before ]
 
 	if args.assignee:
-		data = [t for t in data 
+		data = [t for t in data
 			if args.assignee in t.assignee('name') or \
 			   args.assignee in t.assignee('email')]
 	if args.community:
@@ -763,7 +763,7 @@ def do_weekly(args):
 		assignee = t.assignee('name').split(' ', 1)[0]
 		ticket_num = t['id']
 		
-		headings.append('{}: {} [{}] (LDTS-{})'.format(organization, subject, 
+		headings.append('{}: {} [{}] (LDTS-{})'.format(organization, subject,
 				assignee, ticket_num))
 	
 	for h in sorted(headings):
