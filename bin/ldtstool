@@ -300,7 +300,7 @@ class Ticket(dict):
 					if isinstance(self[field], str):
 						val = self[field][0:int(attr)]
 					else:
-						val = self[field][attr]
+						val = self._safe_get_string_field(field, attr)
 				else:
 					val = self[field]
 			except ValueError:
