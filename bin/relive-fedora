@@ -1,0 +1,155 @@
+#!/bin/sh
+
+#
+# relive-fedora
+#
+# Swap a kernel on a Fedora live image (a.k.a. easy, non-destructive mainline
+# kernel testing)
+#
+
+#
+# We need the live image to be editable so we cannot use Fedora Media Writer.
+# Instead we use livecd-iso-to-disk which leaves all the asserts in a vfat
+# filesystem:
+#
+#     livecd-iso-to-disk --format --reset-mbr --efi --overlay-size-mb 2047 \
+#             Fedora-Workstation-Live-x86_64-26-1.5.iso /dev/sdd
+#
+
+set -x
+
+DEVICE="$1"
+KDIR=wychelm:Development/Kernel/linux-x86
+
+die () {
+	echo "$@"
+	exit 1
+}
+
+sync_assets () {
+	rsync -vaxHAX $KDIR/arch/x86/boot/bzImage .
+	rsync --delete -vaxHAX $KDIR/rootfs-overlay .
+}
+
+find_usb () {
+	candidates="$(find /run/media/drt -maxdepth 1 -iname "fedora*live*")"
+	[ 1 -ne $(echo $candidates | wc -l) ] && \
+		die "Cannot identify (unique) live image"
+	echo "$candidates"
+}
+
+mount_usb () {
+	mkdir -p stick
+	sudo mount "$DEVICE" stick
+	echo "$PWD/stick"
+}
+
+umount_usb () {
+	sudo umount stick
+}
+
+find_kernels () {
+	find $1 -name "vmlinuz"
+	# TODO: check sha1sums
+}
+
+update_kernel () {
+	if [ ! -e "$1.bak" ]
+	then
+		sudo cp "$1" "$1.bak"
+	fi
+
+	for i in "$@"
+	do
+		sudo cp bzImage "$i"
+	done
+}
+
+find_initrds () {
+	find $1/syslinux -name "initrd.img"
+	# TODO: check sha1sums
+}
+
+unpack_initrd () {
+	if [ ! -e "$1.bak" ]
+	then
+		sudo cp "$1" "$1.bak"
+	fi
+
+	unxz -c "$1.bak" > initrd-uncompressed.img
+}
+
+update_initrd () {
+	(cd rootfs-overlay; find . | cpio -H newc -AoF ../initrd-uncompressed.img)
+
+}
+
+pack_initrd () {
+	rd="$1"
+	shift
+
+	# This is a trade-off between CPU time and I/O time... my laptop
+	# has a pretty weak CPU so I'm happier using gzip here!
+	#xz -T 0 check=crc32 --lzma2=dict=512KiB -c initrd-uncompressed.img | sudo dd of="$rd"
+	gzip -c initrd-uncompressed.img | sudo dd of="$rd"
+ 
+
+	for i in "$@"
+	do
+		sudo cp "$rd" "$i"
+	done
+}
+
+find_rootfs () {
+	candidates=$(find $1 -name "squashfs.img")
+	[ 1 -ne $(echo $candidates | wc -l) ] && \
+		die "Cannot identify (unique) rootfs image"
+	echo "$candidates"
+}
+
+unpack_rootfs () {
+	if [ ! -e "$1.bak" ]
+	then
+		sudo cp "$1" "$1.bak"
+	fi
+
+	rm -rf squashfs-root
+	sudo unsquashfs "$1.bak"
+}
+
+update_rootfs () {
+	# TODO: this could be a libguestfs tar-in operation!
+	mkdir -p tmp
+	sudo mount -o loop squashfs-root/LiveOS/rootfs.img tmp
+	tar --owner root --group root -C rootfs-overlay/ -cf - . | sudo tar -C tmp/ -xf -
+	sudo umount tmp
+}
+
+pack_rootfs() {
+	sudo mksquashfs squashfs-root "$1" -noappend
+}
+
+#img="$(find_usb)"
+img="$(mount_usb)"
+
+sync_assets
+
+kernels="$(find_kernels "$img")"
+update_kernel "$kernels"
+
+initrds="$(find_initrds "$img")"
+unpack_initrd $initrds
+update_initrd $initrds
+pack_initrd $initrds
+
+# This is *very* slow since we have to compress a 6GB file system image back
+# into its squashfs
+rootfs="$(find_rootfs "$img")"
+#unpack_rootfs $rootfs
+#update_rootfs $rootfs
+#pack_rootfs $rootfs
+[ -e "$rootfs.bak" ] && sudo mv "$rootfs.bak" "$rootfs"
+sudo tar --owner root --group root -C rootfs-overlay/ -cf "$img/rootfs-overlay.tar.gz" . 
+
+umount_usb
+sync
