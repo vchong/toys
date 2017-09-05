@@ -146,14 +146,26 @@ class Post(dict):
 
 			if post['topic_id'] not in Post.topic_db:
 				time.sleep(0.1)
-				topic = client._get('/t/{}.json'.format(
-						post['topic_id']))
+				try:
+					topic = client._get(
+						'/t/{}.json'.format(
+							post['topic_id']))
+				except pydiscourse.exceptions.DiscourseClientError:
+					if verbose:
+						sys.stdout.write('T')
+						sys.stdout.flush()
+					continue
 				result = 'o'
 			else:
 				topic = Post.topic_db[post['topic_id']]
 			post['topic'] = topic
 
-			post.get_user(client)
+			try:
+				post.get_user(client)
+			except pydiscourse.exceptions.DiscourseClientError:
+				if verbose:
+					sys.stdout.write('U')
+					sys.stdout.flush()
 
 			post.lint()
 			post.index(post)
