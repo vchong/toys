@@ -216,9 +216,12 @@ class Ticket(dict):
 			'home_lhg': 'home',
 			'kernel_kwg': 'kernel',
 			'linaro_lsk': 'kernel',
-			'lava_infrastrucure': 'lava',
+			'lava_infrastrucure': 'lava_and_qa',
+			'lava': 'lava_and_qa',
+			'qa': 'lava_and_qa',
 			'toolchain_tcwg': 'toolchain',
 			'qemu_vritualization': 'qemu',
+			'qemu_virtualization': 'qemu',
 			'networking_lng': 'networking',
 			'open_embedded_oe': 'distros',
 			'open_embedded': 'distros',
@@ -227,15 +230,16 @@ class Ticket(dict):
 			'power_management': 'power',
 			'eas': 'power',
 			'security_swg': 'security',
+                        'linaro_enterprise_group_leg': 'enterprise'
 		}
 
 		# This is an ordered list of categories into which to file
 		# this ticket. It will be assigned the first category found.
 		globs = (
 			'android', 'board', 'kernel', 'power',
-		        'graphics', 'lava', 'qemu', 'toolchain',
+		        'graphics', 'lava_and_qa', 'qemu', 'toolchain',
 			'security', 'distros', '96boards', 'home',
-			'networking' )
+			'networking', 'enterprise' )
 
 		tags = [ hacks[x] if x in hacks else x for x in self['tags'] ]
 		for g in globs:
