@@ -67,3 +67,12 @@ def get_password(config, heading):
 def set_password(config, heading):
 	c = config[heading]
 	keyring.set_password(c['server'], c['username'], getpass.getpass())
+
+def connect_to_jira():
+	'''Connect to the server using a password from the keyring.'''
+	cfg = get_config()['jira']
+	password = keyring.get_password(cfg['server'], cfg['username'])
+
+	from jira.client import JIRA
+	return JIRA(options={'server': cfg['server']},
+		    basic_auth=(cfg['username'], password))

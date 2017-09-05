@@ -646,6 +646,31 @@ def do_weekly(args):
 		else:
 			wrap('{} ({} posts)'.format(s, summary[s]), level=2)
 
+def do_worklog(args):
+	summary = collections.defaultdict(int)
+	for p in Post.load(args.json):
+		summary[p['topic']['title']] += 1
+
+	items = []
+	for s in sorted(summary.keys()):
+		if summary[s] == 1:
+			items.append(' * {}'.format(s))
+		else:
+			items.append(' * {} ({} posts)'.format(s, summary[s]))
+
+	if not args.time_spent:
+		print("No time spent estimate. Please use the following as a memory jogger.\n")
+		for i in items:
+			print(textwrap.fill(i, subsequent_indent='   '))
+		return
+
+	jira = config.connect_to_jira()
+	if not args.issue:
+		args.issue = config.get_config()['96btool']['jiralink']
+	if args.date:
+		args.date = parse_date(args.date)
+	jira.add_worklog(args.issue, timeSpent=args.time_spent, started=args.date, comment='\n'.join(items))
+
 def main(argv):
 	defaultdb=os.path.dirname(os.path.realpath(sys.argv[0])) + '/../96btool.db'
 
@@ -746,6 +771,16 @@ def main(argv):
 			help='Read data from this file')
 
 	s = new_parser(do_weekly)
+	s.add_argument('json', nargs='?',
+			help='Read data from this file')
+
+	s = subparsers.add_parser('worklog')
+	s.add_argument("--issue")
+	s.add_argument("--time-spent")
+	s.add_argument("--date")
+	s.add_argument('json', nargs='?',
+			help='Read data from this file')
+	s.set_defaults(func=do_worklog)
 
 	args = parser.parse_args(argv[1:])
 	return args.func(args)
