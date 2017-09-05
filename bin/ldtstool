@@ -61,6 +61,12 @@ try:
 except:
 	pass
 
+# Also optional (only needed for worklog command)
+try:
+	from jira.client import JIRA
+except:
+	pass
+
 # Import keyring, suppressing any warnings from gi when we do so
 try:
 	import gi
@@ -121,6 +127,13 @@ def get_config():
 		sys.exit(1)
 
 	return cfg
+
+def connect_to_jira():
+	'''Connect to the server using a password from the keyring.'''
+	cfg = get_config()['jira']
+	password = keyring.get_password(cfg['server'], cfg['username'])
+	return JIRA(options={'server': cfg['server']},
+		    basic_auth=(cfg['username'], password))
 
 def collect_by(things, categorize):
 	results = collections.defaultdict(list)
@@ -769,6 +782,24 @@ def do_weekly(args):
 	for h in sorted(headings):
 		wrap(h)
 
+def do_worklog(args):
+	items = []
+	for t in Ticket.load(args.json):
+		items.append(t.format(' * {orgname}: {subject} [{assignee-name}] ({id})'))
+
+	if not args.time_spent:
+		print("No time spent estimate. Please use the following as a memory jogger.\n")
+		for i in items:
+			print(textwrap.fill(i, subsequent_indent='   '))
+		return
+
+	jira = connect_to_jira()
+	if not args.issue:
+		args.issue = get_config()['zendesk']['jiralink']
+	if args.date:
+		args.date = parse_date(args.date)
+	jira.add_worklog(args.issue, timeSpent=args.time_spent, started=args.date, comment='\n'.join(items))
+
 def main(argv):
 	defaultdb=os.path.dirname(os.path.realpath(sys.argv[0])) + '/../zendesk.db'
 
@@ -891,6 +922,13 @@ def main(argv):
 	s = subparsers.add_parser('weekly')
 	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_weekly)
+
+	s = subparsers.add_parser('worklog')
+	s.add_argument("--issue")
+	s.add_argument("--time-spent")
+	s.add_argument("--date")
+	s.add_argument("json", nargs='?')
+	s.set_defaults(func=do_worklog)
 
 	args = parser.parse_args(argv[1:])
 	args.func(args)
