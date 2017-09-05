@@ -1,0 +1,35 @@
+#!/bin/sh
+
+#
+# Aggressively apply mailboxes
+#
+
+unset $failed
+
+# If you have a git commit hook to automatically push things through
+# checkpatch.pl consider making it sensitive to the following environment
+# variable.
+DISABLE_CHECKPATCH=y
+export DISABLE_CHECKPATCH
+
+for i in "$@"
+do
+	git am $i
+	if [ $? -eq 0 ]
+	then
+		rm $i
+	else
+		git am --abort
+		failed="$failed $i"
+	fi
+done
+
+if [ ! -z "$failed" ]
+then
+	echo "Some patches failed to apply:"
+	for i in "$failed"
+	do
+		echo "  $i"
+	done
+fi
+

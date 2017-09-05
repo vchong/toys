@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+
+#
+# bsp-o-matic
+#
+# Convert a monster patch into a series of smaller digestable patches
+# (cleaning things up as we go)
+#
+
+#
+# Features:
+#
+#  - Ignore any attempt to add execute permission to an existing file
+#  - Remove execute permission from any new file that has a filename
+#    that implies it should not be executed.
+#  - Automatically splits things out based on the kernel directory
+#    structure (all changes that impact a single directory will end
+#    up in the same patch)
+#  - Strip trailing whitespace from newly added lines
+#  - Strip space characters made redundant by a subsequent tab.
+#
+# TODO:
+#
+#  - Manage the patch queue as a stack of queues (rather than a single
+#    stack) to make globbing more effective)
+#
+
+import io
+import os
+import re
+import sys
+
+# Make sure we ignore unicode errors
+sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace')
+
+# This list is grown "organically" as we discover problems
+automatically_generated = (
+	# .config is *not* in this list... if someone checks that it we
+	# probably need to manually convert it to a defconfig
+	'arch/arm/boot/compressed/ashldi3.S',
+	'arch/arm/boot/compressed/hyp-stub.S',
+	'arch/arm/boot/compressed/lib1funcs.S',
+	'arch/arm/boot/compressed/vmlinux.lds',
+	'arch/arm/kernel/vmlinux.lds',
+	'kernel/config_data.h',
+	'kernel/hz.bc',
+	'kernel/timeconst.h',
+	'lib/crc32table.h',
+	'lib/gen_crc32table',
+	'scripts/basic/fixdep',
+	'scripts/bin2c',
+	'scripts/conmakehash',
+	'scripts/kallsyms',
+	'scripts/kconfig/conf',
+	'scripts/kconfig/zconf.hash.c',
+	'scripts/kconfig/zconf.lex.c',
+	'scripts/kconfig/zconf.tab.c',
+	'scripts/mod/devicetable-offsets.h',
+	'scripts/mod/elfconfig.h',
+	'scripts/mod/mk_elfconfig',
+	'usr/gen_init_cpio',
+	'usr/initramfs_data.cpio',
+	'scripts/mod/modpost',
+	'scripts/sortextable'
+)
+
+class PatchEngine(object):
+	def __init__(self):
+		self.pcount = 0
+		self.perfile_meta = {}
+		self.history = []
+		self.patch_dir = None
+		self.patch_queue = []
+
+	def format_patch(self):
+		if len(self.patch_queue) == 0:
+			return
+
+		self.pcount += 1
+
+		clean_name = self.patch_dir.replace('drivers/', '')
+		patch_name = '%04d-%s-RDA-support.patch' % \
+				(self.pcount, clean_name.replace('/', '-'))
+
+		with open(patch_name, 'w') as f:
+			print('From: Daniel Thompson <daniel.thompson@linaro.org>', file=f)
+			print('Date: Mon Jul 30 08:09:38 2017 +0100', file=f)
+			print('Subject: [PATCH] %s: RDA support' % \
+					(clean_name.replace('/', ': '),), file=f)
+			for ln in self.patch_queue:
+				print(ln, file=f)
+			self.patch_queue = []
+
+	def build_patch(self):
+		meta = self.perfile_meta
+		fname = meta['a']
+		if fname == '/dev/null':
+			fname = meta['b']
+
+		# We will attempt to glob anything that does not make
+		# changes to include. The logic here is that most
+		# changes to include/ are unrelated to each other so
+		# globbing those is not really wanted.
+		if fname.startswith('include/'):
+			if fname.endswith('.h'):
+				new_dir = fname[:-2]
+			else:
+				new_dir = fname
+		else:
+			new_dir = os.path.dirname(fname)
+
+
+		if new_dir != self.patch_dir:
+			self.format_patch()
+			self.patch_dir = new_dir
+
+		self.patch_queue += self.history
+		self.history = []
+
+	def known_not_executable(self, fname):
+		contains = ( 'Makefile', )
+		endings = ( '.c', 'h', '.S', '.txt', 'Kconfig', 'defconfig' )
+
+		for c in contains:
+			if c in fname:
+				return True
+
+		for e in endings:
+			if e in fname:
+				return True
+
+		return False
+
+	def show_history(self, file=sys.stdout):
+		for h in self.history:
+			print(h, file=file)
+		self.history = []
+
+	def apply_perfile_fixups(self):
+		# Is there any work to do? If no, this was probably a patch
+		# header.
+		if len(self.perfile_meta) == 0:
+			self.show_history()
+			self.perfile_meta = {}
+			return
+
+		# Elminate any new execute permissions (unlikely in a BSP)
+		if 'old mode' in self.perfile_meta and \
+		   'new mode' in self.perfile_meta and \
+		   self.perfile_meta['old mode'][3] == '6' and \
+		   self.perfile_meta['new mode'][3] == '7':
+			   self.history = [ x for x in self.history
+					   if not x.startswith('old mode') and
+					      not x.startswith('new mode')]
+
+		# Eliminate any bogus execute permissions on new files.
+		# Note that if we have a 'new file mode' we *must* have a
+		# 'b' or the underlying patch file is corrupt!
+		if 'new file mode' in self.perfile_meta and \
+		   self.known_not_executable(self.perfile_meta['b']):
+			   for lineno in range(len(self.history)):
+				   if self.history[lineno].startswith(
+						   'new file mode'):
+					   ln = self.history[lineno]
+					   ln = ln.replace('7', '6')
+					   ln = ln.replace('5', '4')
+					   self.history[lineno] = ln
+
+		# Undo any attempt to deletes an existing .gitignore.
+		if self.perfile_meta['a'].endswith('/.gitignore') and \
+		   'deleted file mode' in self.perfile_meta:
+			self.history = []
+
+		# Ignore any attempt to create a file that is automatically
+		# generated.
+		if self.perfile_meta['b'] in automatically_generated and \
+		   'new file mode' in self.perfile_meta:
+			self.history = []
+
+		# If there's nothing left kill the whole patch
+		if len(self.history) == 1 and \
+		   self.history[0].startswith('diff '):
+			self.history = []
+
+		if len(self.history) and 'a' in self.perfile_meta:
+			self.build_patch()
+		self.show_history() # Display any missing pieces
+		self.perfile_meta = {}
+
+	def apply_newline_fixups(self, ln):
+		# Strip any trailing whitespace
+		ln = ln.rstrip()
+
+		# Strip any leading whitespace that is followed by a tab
+		ln = re.sub(r'^ {1,7}\t', '\t', ln)
+
+		# Strip any whitespace made redundant by a preceding tab
+		ln = re.sub(r'\t {1,7}\t', '\t', ln)
+
+		return ln
+
+	def process(self, ln):
+		if ln.startswith('diff '):
+			self.apply_perfile_fixups()
+		# TODO: per-hunk fixups
+		#elif ln.startswith('@@ '):
+		#	self.apply_perhunk_fixups()
+
+		defer = False
+
+		if ln.startswith('diff'):
+			a, b = ln.split()[-2:]
+			if a.startswith('a/') and b.startswith('b/'):
+				a = a[2:]
+				b = b[2:]
+			self.perfile_meta['a'] = a
+			self.perfile_meta['b'] = b
+		elif ln.startswith('old mode '):
+			self.perfile_meta['old mode'] = ln.split()[-1]
+		elif ln.startswith('new mode '):
+			self.perfile_meta['new mode'] = ln.split()[-1]
+		elif ln.startswith('new file mode '):
+			self.perfile_meta['new file mode'] = ln.split()[-1]
+		elif ln.startswith('deleted file mode '):
+			self.perfile_meta['deleted file mode'] = ln.split()[-1]
+		elif ln.startswith('+') and not ln.startswith('+++'):
+			ln = self.apply_newline_fixups(ln)
+
+		self.history.append(ln)
+
+
+engine = PatchEngine()
+for ln in sys.stdin.readlines():
+	ln = ln[0:-1]
+	engine.process(ln)
+
+# process the final file
+engine.apply_perfile_fixups()
+engine.format_patch()
+
+
