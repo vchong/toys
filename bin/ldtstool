@@ -580,7 +580,7 @@ def do_markdown(args):
 
 	tickets = Ticket.load(args.json)
 	data = collect_by(tickets, lambda t: t['status'])
-	for status in ('closed', 'solved', 'pending', 'open'):
+	for status in ('closed', 'solved', 'pending', 'open', 'new'):
 		if status not in data:
 			continue
 
