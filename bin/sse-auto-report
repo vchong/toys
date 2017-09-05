@@ -16,6 +16,7 @@ then
 	since=`date -d"-$(($day - 1)) days 00:00:00" +"%Y-%m-%d %H:%M:%S"`
 	until=`date -d"next-month -$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
 	full_year_since=`date -d"next-month -$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	double_year_since=`date -d"next-month -$(($day - 1)) days -2 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
 	since=$full_year_since
 	tag="yearly"
 	quantum="year"
@@ -25,6 +26,8 @@ then
 	since=`date -d"last-month -$(($day - 1)) days -2 month 00:00:00" +"%Y-%m-%d %H:%M:%S"`
 	until=`date -d"-$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
 	full_year_since=`date -d"-$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	double_year_since=`date -d"-$(($day - 1)) days -2 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+
 	tag="quarterly"
 	quantum="quarter"
 else # monthly
@@ -32,6 +35,7 @@ else # monthly
 	since=`date -d"last-month -$(($day - 1)) days 00:00:00" +"%Y-%m-%d %H:%M:%S"`
 	until=`date -d"-$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
 	full_year_since=`date -d"-$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	double_year_since=`date -d"-$(($day - 1)) days -2 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
 	tag="monthly"
 	quantum="month"
 fi
@@ -77,7 +81,7 @@ printf " done\n"
 printf "Generating LDTS activity graphs ."
 
 ldtstool dump | ldtstool filter --restrict created --member \
-		--since "$full_year_since" --until "$until" | \
+		--since "$double_year_since" --until "$until" | \
 ldtstool chart --output "fig-2.1-ldts-by_month_by_member.png"
 printf "."
 
@@ -87,12 +91,12 @@ ldtstool piechart --by-member --output "fig-2.2-ldts-by_member.png"
 printf "."
 
 ldtstool dump | ldtstool filter --restrict created --member \
-		--since "$full_year_since" --until "$until" | \
+		--since "$double_year_since" --until "$until" | \
 ldtstool piechart --by-member --output "fig-2.3-ldts-by_member-full_year.png"
 printf "."
 
 ldtstool dump | ldtstool filter --restrict created --member \
-		--since "$full_year_since" --until "$until" | \
+		--since "$double_year_since" --until "$until" | \
 ldtstool chart --by-category --output "fig-2.4-ldts-by_month_by_category.png"
 printf "."
 
@@ -102,12 +106,12 @@ ldtstool piechart --by-category --output "fig-2.5-ldts-by_category.png"
 printf "."
 
 ldtstool dump | ldtstool filter --restrict created --member \
-		--since "$full_year_since" --until "$until" | \
+		--since "$double_year_since" --until "$until" | \
 	ldtstool piechart --by-category --output "fig-2.6-ldts-by_category-full_year.png"
 printf "."
 
 ldtstool dump | ldtstool filter --restrict created --community \
-		--since "$full_year_since" --until "$until" | \
+		--since "$double_year_since" --until "$until" | \
 ldtstool chart --by-category --output "fig-2.7-community-by_month_by_category.png"
 printf "."
 
@@ -125,7 +129,7 @@ printf " done\n"
 # The output of pull --verbose is naturally compatible with our own output
 96btool pull --verbose
 
-96btool dump | 96btool filter --since "$full_year_since" \
+96btool dump | 96btool filter --since "$double_year_since" \
 			      --until "$until" > tmp/96boards-all.json
 
 for i in danielt ldts ldts-atsuka leo-yan vchong
