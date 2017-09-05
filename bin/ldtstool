@@ -569,6 +569,13 @@ def do_format(args):
 	for t in Ticket.load(args.json):
 		print(t.format(args.template))
 
+def do_import(args):
+	with open(args.json, 'r') as f:
+		tickets = [ json.loads(ln) for ln in f.readlines() ]
+
+	with open(args.db, 'w') as f:
+		json.dump(tickets, f)
+
 def do_markdown(args):
 	template = args.template
 	if args.add_organization:
@@ -830,6 +837,12 @@ def main(argv):
 			default="{id}: {subject} ({orgname} - {requester-email})")
 	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_format)
+
+	s = subparsers.add_parser("import")
+	s.add_argument('--db', default=defaultdb,
+		       help="File to store imported data into")
+	s.add_argument("json")
+	s.set_defaults(func=do_import)
 
 	s = subparsers.add_parser('markdown')
 	s.add_argument("--add-organization", action='store_true')
