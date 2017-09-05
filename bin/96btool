@@ -348,7 +348,13 @@ def do_filter(args):
 	posts = [ p for p in posts if iso8601.parse_date(p['created_at']) < until ]
 
 	if args.user:
-		posts = [ p for p in posts if p['username'] == args.user ]
+		users = args.user.split(',')
+		posts_by_id = {}
+		for user in users:
+			for p in posts:
+				if p['username'] == user:
+					posts_by_id[p['id']] = p
+		posts = [ posts_by_id[k] for k in sorted(posts_by_id.keys()) ]
 
 	if args.first_post:
 		# Opps. We stripped out the post stream so this test ends up more
