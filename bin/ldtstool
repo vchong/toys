@@ -152,7 +152,7 @@ def stacked_bar_chart(things, filename, title=None, xlabel=None, ylabel=None):
 	for y in sorted(legend_labels, reverse=True):
 		values = [ things[x][y] for x in x_labels ]
 		plots.append(plt.bar(left, values, 1,
-			bottom=cumulative_height, color=get_colour(y)))
+			bottom=cumulative_height, color=get_colour(y), edgecolor='black'))
 		cumulative_height = [ c+v for c, v in zip(cumulative_height,
 							  values) ]
 
@@ -661,8 +661,10 @@ def do_piechart(args):
 	counts = [ count[k] for k in labels ]
 	colours = [ get_colour(k) for k in labels ]
 
-	patches, texts = plt.pie(counts, colors=colours, startangle=90)
-	plt.legend(patches, add_percent_labels(labels, counts), loc="best")
+	wedges, texts = plt.pie(counts, colors=colours, startangle=90)
+	for w in wedges:
+		w.set_edgecolor('black')
+	plt.legend(wedges, add_percent_labels(labels, counts), loc="best")
 	plt.axis('equal')
 	if args.title:
 		plt.suptitle(args.title, fontsize=14)
