@@ -278,7 +278,8 @@ def do_count(args):
 
 	if args.by_user:
 		count = collect.accumulate(posts, lambda x: x['username'])
-		del count[None]
+		if None in count:
+			del count[None]
 
 	if count:
 		flat_count = [ (k, v) for k, v in count.items() ]
