@@ -42,38 +42,18 @@ Figuring out the number of unique users:
 
 import argparse
 import collections
-import configparser
-import datetime
 import iso8601
-import hashlib
 import json
-import getpass
 import os
 import re
 import textwrap
-import subprocess
 import sys
 
-# Let's make the plotting tools optional (for those who only use glimpse
-# for their weekly report)
-try:
-	import matplotlib.pyplot as plt
-except:
-	pass
-
-# Also optional (only needed for worklog command)
-try:
-	from jira.client import JIRA
-except:
-	pass
-
-# Import keyring, suppressing any warnings from gi when we do so
-try:
-	import gi
-	gi.require_version('GnomeKeyring', '1.0')
-except:
-	pass
-import keyring
+# This code requires PYTHONPATH to include .../toys/lib/python
+import toys.chart as chart
+import toys.collect as collect
+import toys.config as config
+import toys.date as date
 
 # Try to import zdesk, failure is non-fatal since this is only needed for
 # online support (the fetch sub-tool)
@@ -81,130 +61,6 @@ try:
 	import zdesk
 except:
 	print("WARNING: zdesk module not found - no online support", file=sys.stderr)
-
-def add_percent_labels(labels, values):
-	total = sum(values)
-	return [ '{} ({:1.1f}%)'.format(l, 100 * (v / total)) for l, v in zip(labels, values) ]
-
-class UTC(datetime.tzinfo):
-	ZERO = datetime.timedelta(0)
-
-	def utcoffset(self, dt):
-		return self.ZERO
-
-	def tzname(self, dt):
-		return "UTC"
-
-	def dst(self, dt):
-		return self.ZERO
-
-utc = UTC()
-
-def get_config():
-	'''Open (or create) a config file.'''
-	filename = os.environ['HOME'] + os.sep + '.linaro_toys'
-
-	cfg = configparser.ConfigParser()
-	try:
-		cfg.read(filename)
-	except:
-		pass
-
-	if 'zendesk' not in cfg:
-		cfg['zendesk'] = {}
-
-	orig = dict(cfg['zendesk'])
-	if 'server' not in cfg['zendesk']:
-		cfg['zendesk']['server'] = 'https://linaro.zendesk.com'
-	if 'username' not in cfg['zendesk']:
-		cfg['zendesk']['username'] = 'daniel.thompson@linaro.org'
-
-	if orig != cfg['zendesk']:
-		with open(filename, 'w') as f:
-			cfg.write(f)
-		print('{} was updated. Please check and re-run.'.format(filename),
-				file=sys.stderr)
-		sys.exit(1)
-
-	return cfg
-
-def connect_to_jira():
-	'''Connect to the server using a password from the keyring.'''
-	cfg = get_config()['jira']
-	password = keyring.get_password(cfg['server'], cfg['username'])
-	return JIRA(options={'server': cfg['server']},
-		    basic_auth=(cfg['username'], password))
-
-def collect_by(things, categorize):
-	results = collections.defaultdict(list)
-	for t in things:
-		results[categorize(t)].append(t)
-	return results
-
-def collect_and_count_by(things, categorize, count=lambda t: 1):
-	results = collections.defaultdict(int)
-	for t in things:
-		results[categorize(t)] += count(t)
-	return results
-
-def stacked_bar_chart(things, filename, title=None, xlabel=None, ylabel=None):
-	x_labels = sorted(things.keys())
-
-	legend_labels = set()
-	for y in things.values():
-		legend_labels |= set(y.keys())
-	legend_labels = sorted(legend_labels)
-
-	plots = []
-	left = range(len(x_labels))
-
-	# Working in reverse order allows us to stack things so that the
-	# (alphabetic) legend is geometrically consistant with the stacks
-	# on the charts.
-	cumulative_height = [ 0 for x in x_labels ]
-	for y in sorted(legend_labels, reverse=True):
-		values = [ things[x][y] for x in x_labels ]
-		plots.append(plt.bar(left, values, 1,
-			bottom=cumulative_height, color=get_colour(y), edgecolor='black'))
-		cumulative_height = [ c+v for c, v in zip(cumulative_height,
-							  values) ]
-
-	# Now we must reverse plots in order to match it back up with the
-	# legend labels
-	plots.reverse()
-
-	if title:
-		plt.title(title)
-	if xlabel:
-		plt.xlabel(xlabel)
-	if ylabel:
-		plt.ylabel(ylabel)
-
-	plt.xticks([ x+0.5 for x in left ], x_labels, rotation=90)
-	lgd = plt.legend(plots, legend_labels, bbox_to_anchor=(1.05, 1), loc=2)
-	plt.savefig(filename, bbox_extra_artists=(lgd,), bbox_inches='tight')
-	plt.close()
-
-def parse_date(s, end_of_day=False):
-	'''Convert a string to a datetime object.
-
-	Operates by calling out to date (because it has a good relative date
-	parser).
-
-	'''
-	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
-	date = str(date, 'utf-8')
-	date = date.rstrip()
-	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
-
-	# TODO: We might jump about a few hours here (date has not been
-	#       told to give back values in UTC)
-	date = date.replace(tzinfo=utc)
-
-	if end_of_day and date.hour == 0 and date.minute == 0 and date.second == 0:
-		date += datetime.timedelta(hours=23, minutes=59, seconds=59)
-
-	return date.replace(tzinfo=utc)
 
 class Ticket(dict):
 	def _safe_get_string_field(self, attr, field):
@@ -417,7 +273,7 @@ class Ticket(dict):
 
 			return users[id]['user']
 
-		cfg = get_config()['zendesk']
+		cfg = config.get_config()['zendesk']
 		password = keyring.get_password(cfg['server'], cfg['username'])
 		zd = zdesk.Zendesk(cfg['server'], cfg['username'], password)
 
@@ -447,10 +303,8 @@ class Ticket(dict):
 		return [ Ticket(t) for t in data ]
 
 def get_count_by_member(tickets, reduce_namespace=False):
-	count = collections.defaultdict(int)
-	for t in tickets:
-		count[t.orgname(reduce_namespace=reduce_namespace)] += 1
-	return count
+	return collect.accumulate(tickets,
+			lambda t: t.orgname(reduce_namespace=reduce_namespace))
 
 def get_count_by_month(tickets):
 	count = collections.defaultdict(int)
@@ -464,10 +318,7 @@ def get_count_by_month(tickets):
 	return count
 
 def get_count_by_category(tickets):
-	count = collections.defaultdict(int)
-	for t in tickets:
-		count[t.category()] += 1
-	return count
+	return collect.accumulate(tickets, lambda t: t.category())
 
 def do_chart(args):
 	tickets = Ticket.load(args.json)
@@ -477,11 +328,11 @@ def do_chart(args):
 	else:
 		seive = lambda t: t.orgname(reduce_namespace=True)
 
-	data = collect_by(tickets, lambda t: t.created_at().strftime('%Y-%m'))
+	data = collect.collate(tickets, lambda t: t.created_at().strftime('%Y-%m'))
 	for month in data.keys():
-		data[month] = collect_and_count_by(data[month], seive)
+		data[month] = collect.accumulate(data[month], seive)
 
-	stacked_bar_chart(data, args.output,
+	chart.stacked_barchart(data, args.output,
 			title = 'Tickets by month and member',
 			ylabel = 'Number of tickets')
 
@@ -507,19 +358,6 @@ def do_count(args):
 	else:
 		print(len(tickets))
 
-def get_colour(s):
-	override = {
-		'lava' : 'orange',
-		'LAVA' : 'orange',
-		'96boards' : 'red',
-		'96Boards' : 'red',
-	}
-
-	if s in override:
-		return override[s]
-
-	return '#{}'.format(hashlib.md5(str(s).encode('UTF-8')).hexdigest()[-6:])
-
 def do_days(args):
 	for t in Ticket.load(args.json):
 		created_at = iso8601.parse_date(t['created_at'])
@@ -533,8 +371,8 @@ def do_dump(args):
 		sys.stdout.write(f.read())
 
 def do_fetch(args):
-	since = parse_date(args.since)
-	until = parse_date(args.until)
+	since = date.smart_parse(args.since)
+	until = date.smart_parse(args.until)
 
 	tickets = Ticket.fetch(since, until)
 
@@ -554,15 +392,15 @@ def do_fields(args):
 		print(f)
 
 def do_filter(args):
-	since = parse_date(args.since)
-	until = parse_date(args.until)
+	since = date.smart_parse(args.since)
+	until = date.smart_parse(args.until)
 
 	data = Ticket.load(args.json)
 
 	data = [ t for t in data if t.is_within_date(since, until, args.restrict) ]
 
 	if args.updated_before:
-		before = parse_date(args.updated_before)
+		before = date.smart_parse(args.updated_before)
 		data = [ t for t in data if t.updated_at() < before ]
 
 	if args.assignee:
@@ -599,7 +437,7 @@ def do_markdown(args):
 		template = template + ' ({requester-email})'
 
 	tickets = Ticket.load(args.json)
-	data = collect_by(tickets, lambda t: t['status'])
+	data = collect.collate(tickets, lambda t: t['status'])
 	for status in ('closed', 'solved', 'pending', 'open', 'new'):
 		if status not in data:
 			continue
@@ -667,10 +505,11 @@ def do_monthly(args):
 	print("</table>")
 
 def do_passwd(args):
-	cfg = get_config()['zendesk']
-	print("WARNING: This is *not* your Google password. You have to set a")
-	print("         Zendesk password to use this tool.")
-	keyring.set_password(cfg['server'], cfg['username'], getpass.getpass())
+	print("WARNING: This is *not* your normal password. You have to create")
+	print("         an API token (and use your.email@linaro.org/token as")
+	print("         your username)")
+	cfg = config.get_config()
+	config.set_password(cfg, 'zendesk')
 
 def do_piechart(args):
 	tickets = Ticket.load(args.json)
@@ -681,19 +520,7 @@ def do_piechart(args):
 	else:
 		count = get_count_by_category(tickets)
 
-	labels = [ k for k in sorted(count.keys()) ]
-	counts = [ count[k] for k in labels ]
-	colours = [ get_colour(k) for k in labels ]
-
-	wedges, texts = plt.pie(counts, colors=colours, startangle=90)
-	for w in wedges:
-		w.set_edgecolor('black')
-	plt.legend(wedges, add_percent_labels(labels, counts), loc="best")
-	plt.axis('equal')
-	if args.title:
-		plt.suptitle(args.title, fontsize=14)
-	plt.savefig(args.output)
-	plt.close()
+	chart.piechart(count, args.output, title=args.title)
 
 def do_pull(args):
 	if args.verbose:
@@ -793,11 +620,11 @@ def do_worklog(args):
 			print(textwrap.fill(i, subsequent_indent='   '))
 		return
 
-	jira = connect_to_jira()
+	jira = config.connect_to_jira()
 	if not args.issue:
-		args.issue = get_config()['zendesk']['jiralink']
+		args.issue = config.get_config()['zendesk']['jiralink']
 	if args.date:
-		args.date = parse_date(args.date)
+		args.date = date.smart_parse(args.date)
 	jira.add_worklog(args.issue, timeSpent=args.time_spent, started=args.date, comment='\n'.join(items))
 
 def main(argv):
