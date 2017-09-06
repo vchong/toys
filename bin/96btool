@@ -35,6 +35,7 @@ import traceback
 import toys.chart as chart
 import toys.collect as collect
 import toys.config as config
+import toys.date as date
 
 # If it's installed we'd rather use IPython for interaction...
 try:
@@ -66,27 +67,6 @@ category_lookup = {
         22: 'Nitrogen',
         23: 'OrangePi i96',
 }
-
-def parse_date(s, end_of_day=False):
-	'''Convert a string to a datetime object.
-
-	Operates by calling out to date (because it has a good relative date
-	parser).
-
-	'''
-	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
-	date = str(date, 'utf-8')
-	date = date.rstrip()
-	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
-
-	# TODO: We might jump about a few hours here (date has not been
-	#       told to give back values in UTC)
-	date = date.replace(tzinfo=iso8601.UTC)
-
-	if end_of_day and date.hour == 0 and date.minute == 0 and date.second == 0:
-		date += datetime.timedelta(hours=23, minutes=59, seconds=59)
-
-	return date.replace(tzinfo=iso8601.UTC)
 
 class Post(dict):
 	post_db = {}
@@ -308,7 +288,7 @@ def do_dump(args):
 
 def do_fetch(args):
 	'''Use discourse to search for matching topics (limited to <50)'''
-	since = parse_date(args.since)
+	since = date.smart_parse(args.since)
 	after = since.strftime(' after:%Y-%m-%d')
 
 	cfg = config.get_config()
@@ -340,8 +320,8 @@ def do_fetch(args):
 
 def do_filter(args):
 	'''Filter posts using various criteria (including date of post)'''
-	since = parse_date(args.since)
-	until = parse_date(args.until)
+	since = date.smart_parse(args.since)
+	until = date.smart_parse(args.until)
 
 	posts = Post.load(args.json)
 
@@ -669,7 +649,7 @@ def do_worklog(args):
 	if not args.issue:
 		args.issue = config.get_config()['96btool']['jiralink']
 	if args.date:
-		args.date = parse_date(args.date)
+		args.date = date.smart_parse(args.date)
 	jira.add_worklog(args.issue, timeSpent=args.time_spent, started=args.date, comment='\n'.join(items))
 
 def main(argv):
