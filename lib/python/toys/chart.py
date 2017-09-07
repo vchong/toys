@@ -15,6 +15,9 @@ def get_colour(s):
 		'LAVA' : 'orange',
 		'96boards' : 'red',
 		'96Boards' : 'red',
+		'Marvell' : 'green',
+		'Hisilicon' : 'pink',
+
                 # Daniel Thompson and Leo Yan both hash orange
                 'Daniel Thompson' : 'green',
 	}

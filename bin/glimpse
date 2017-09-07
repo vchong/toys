@@ -13,18 +13,24 @@ Prerequisites (ubuntu:16.04):
 
 import argparse
 import collections
-import configparser
 import copy
 import datetime
-import getpass
-import hashlib
 from jira.client import JIRA
 import iso8601
 import os
 import re
 import textwrap
-import subprocess
 import sys
+
+try:
+	import toys.chart as chart
+	import toys.collect as collect
+	import toys.config as config
+	import toys.date as date
+except:
+	print("ERROR: Cannot import toys module. Is PYTHONPATH set correctly?",
+			file=sys.stderr)
+	sys.exit(1)
 
 # Let's make the plotting tools optional (for those who only use glimpse
 # for their weekly report)
@@ -32,28 +38,6 @@ try:
 	import matplotlib.pyplot as plt
 except:
 	pass
-
-# Import keyring, suppressing any warnings from gi when we do so
-try:
-    import gi
-    gi.require_version('GnomeKeyring', '1.0')
-except:
-    pass
-import keyring
-
-class UTC(datetime.tzinfo):
-    ZERO = datetime.timedelta(0)
-
-    def utcoffset(self, dt):
-        return self.ZERO
-
-    def tzname(self, dt):
-        return "UTC"
-
-    def dst(self, dt):
-        return self.ZERO
-
-utc = UTC()
 
 #
 # Collection of find/replace strings to massage a summary for
@@ -70,76 +54,6 @@ hacks = (
 	('WIFI', 'WiFi'),
 	('wifi', 'WiFi'),
 )
-
-def add_percent_labels(labels, values):
-	total = sum(values)
-	return [ '{} ({:1.1f}%)'.format(l, 100 * (v / total)) for l, v in zip(labels, values) ]
-
-def get_colour(s):
-	override = {
-		'lava' : 'orange',
-		'LAVA' : 'orange',
-		'96boards' : 'red',
-		'96Boards' : 'red',
-		'Marvell' : 'green',
-		'Hisilicon' : 'pink',
-	}
-
-	if s in override:
-		return override[s]
-
-	return '#{}'.format(hashlib.md5(str(s).encode('UTF-8')).hexdigest()[-6:])
-
-def collect_by(things, categorize):
-	results = collections.defaultdict(list)
-	for t in things:
-		results[categorize(t)].append(t)
-	return results
-
-def collect_and_count_by(things, categorize, count=lambda t: 1):
-	results = collections.defaultdict(int)
-	for t in things:
-		results[categorize(t)] += count(t)
-	return results
-
-def stacked_bar_chart(things, filename, title=None, xlabel=None, ylabel=None):
-	x_labels = sorted(things.keys())
-
-	legend_labels = set()
-	for y in things.values():
-		legend_labels |= set(y.keys())
-	legend_labels = sorted(legend_labels)
-
-	plots = []
-	left = range(len(x_labels))
-
-	# Working in reverse order allows us to stack things so that the
-	# (alphabetic) legend is geometrically consistant with the stacks
-	# on the charts.
-	cumulative_height = [ 0 for x in x_labels ]
-	for y in sorted(legend_labels, reverse=True):
-		values = [ things[x][y] for x in x_labels ]
-		plots.append(plt.bar(left, values, 1,
-			bottom=cumulative_height, color=get_colour(y),
-                        edgecolor='black'))
-		cumulative_height = [ c+v for c, v in zip(cumulative_height,
-							  values) ]
-
-	# Now we must reverse plots in order to match it back up with the
-	# legend labels
-	plots.reverse()
-
-	if title:
-		plt.title(title)
-	if xlabel:
-		plt.xlabel(xlabel)
-	if ylabel:
-		plt.ylabel(ylabel)
-
-	plt.xticks([ x+0.5 for x in left ], x_labels, rotation=90)
-	lgd = plt.legend(plots, legend_labels, bbox_to_anchor=(1.05, 1), loc=2)
-	plt.savefig(filename, bbox_extra_artists=(lgd,), bbox_inches='tight')
-	plt.close()
 
 component_aliases = {
 	'Android-upstreaming' : 'Linaro'
@@ -405,41 +319,6 @@ class Report(object):
 	def print(msg, level=0):
 		print('\n'.join(Report.wrappers[level].wrap(msg)))
 
-def get_config():
-	'''Open (or create) a config file.'''
-	filename = os.environ['HOME'] + os.sep + '.linaro_toys'
-
-	cfg = configparser.ConfigParser()
-	try:
-		cfg.read(filename)
-	except:
-		pass
-
-	if 'jira' not in cfg:
-		cfg['jira'] = {}
-
-	orig = dict(cfg['jira'])
-	if 'server' not in cfg['jira']:
-		cfg['jira']['server'] = 'https://projects.linaro.org'
-	if 'username' not in cfg['jira']:
-		cfg['jira']['username'] = 'daniel.thompson@linaro.org'
-
-	if orig != cfg['jira']:
-		with open(filename, 'w') as f:
-			cfg.write(f)
-		print('{} was updated. Please check and re-run.'.format(filename),
-				file=sys.stderr)
-		sys.exit(1)
-
-	return cfg
-
-def connect_to_jira():
-	'''Connect to the server using a password from the keyring.'''
-	cfg = get_config()['jira']
-	password = keyring.get_password(cfg['server'], cfg['username'])
-	return JIRA(options={'server': cfg['server']},
-		    basic_auth=(cfg['username'], password))
-
 def parse_constraint(args):
 	'''Generate any additional query constraints'''
 	if len(args) == 0:
@@ -453,34 +332,13 @@ def parse_constraint(args):
 	# applied but makes is easy to pass e-mail address from the shell.
 	return constraint.replace('@', '\\u0040')
 
-def parse_date(s, end_of_day=False):
-	'''Convert a string to a datetime object.
-
-	Operates by calling out to date (because it has a good relative date
-	parser).
-
-	'''
-	date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
-	date = str(date, 'utf-8')
-	date = date.rstrip()
-	date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
-
-	# TODO: We might jump about a few hours here (date has not been
-	#       told to give back values in UTC
-	date = date.replace(tzinfo=utc)
-
-	if end_of_day and date.hour == 0 and date.minute == 0 and date.second == 0:
-		date += datetime.timedelta(hours=23, minutes=59, seconds=59)
-
-	return date.replace(tzinfo=utc)
-
 def do_weekly(args):
 	query = 'project = "Premium Services Engineering"'
 	query += ' AND (statusCategory != Complete OR updatedDate >= "{}")'.format(
 			args.since.strftime("%Y/%m/%d %H:%M"))
 	query += args.constraint
 
-	jira = connect_to_jira()
+	jira = config.connect_to_jira()
 	report = Report(jira, jira.search_issues(query))
 
 	report.print('## Progress')
@@ -513,7 +371,7 @@ def do_monthly(args):
 			args.since.strftime("%Y/%m/%d %H:%M"))
 	query += args.constraint
 
-	jira = connect_to_jira()
+	jira = config.connect_to_jira()
 	report = Report(jira, jira.search_issues(query))
 
 	print('''\
@@ -581,8 +439,8 @@ def do_monthly(args):
 ''')
 
 def do_passwd(args):
-	cfg = get_config()['jira']
-	keyring.set_password(cfg['server'], cfg['username'], getpass.getpass())
+	cfg = config.get_config()
+	config.set_password(cfg, 'jira')
 
 def do_piechart(args):
 	full_year_since = args.until.replace(year=args.until.year - 1) + datetime.timedelta(minutes=1)
@@ -596,7 +454,7 @@ def do_piechart(args):
 			full_year_since.strftime("%Y/%m/%d %H:%M"))
 	query += args.constraint
 
-	jira = connect_to_jira()
+	jira = config.connect_to_jira()
 	report = Report(jira, jira.search_issues(query))
 
 	def summarize(categorize_with, age):
@@ -622,19 +480,10 @@ def do_piechart(args):
 		return data
 
 	def plot(title, fname, data, field):
-		labels = [ d for d in sorted(data.keys()) ]
-		counts = [ data[d][field] for d in labels ]
-		colours = [ get_colour(m) for m in labels ]
-
-		wedges, texts = plt.pie(counts, colors=colours, startangle=90)
-		for w in wedges:
-			w.set_edgecolor('black')
-		plt.legend(wedges, add_percent_labels(labels, counts), loc="best")
-		plt.axis('equal')
-		plt.suptitle(title, fontsize=14)
-		plt.tight_layout()
-		plt.savefig(fname)
-		plt.close()
+		things = {}
+		for k in data.keys():
+			things[k] = data[k][field]
+		chart.piechart(things, fname, title=title)
 
 	by_member = summarize(Issue.get_member, age=(args.since, args.until))
 	plot('PSE card summary per member ({} to {})'.format(since, until),
@@ -669,25 +518,25 @@ def do_piechart(args):
 
 	### Effort, by month and by member
 
-	by_month_by_member = collect_by(by_worklog, lambda w: w['date'].strftime('%Y-%m'))
+	by_month_by_member = collect.collate(by_worklog, lambda w: w['date'].strftime('%Y-%m'))
 	for month in by_month_by_member.keys():
-		by_month_by_member[month] = collect_and_count_by(
+		by_month_by_member[month] = collect.accumulate(
 				by_month_by_member[month],
 				lambda l: report.cards[l['epic']].get_member(),
 				lambda l: l['effort'])
-	stacked_bar_chart(by_month_by_member, 'effort_by_month_and_member.png',
+	chart.stacked_barchart(by_month_by_member, 'effort_by_month_and_member.png',
 			title = 'Effort by month and member',
 			ylabel = 'Effort (man-hours)')
 
 	### Effort, by month and by category
 
-	by_month_by_cat = collect_by(by_worklog, lambda w: w['date'].strftime('%Y-%m'))
+	by_month_by_cat = collect.collate(by_worklog, lambda w: w['date'].strftime('%Y-%m'))
 	for month in by_month_by_cat.keys():
-		by_month_by_cat[month] = collect_and_count_by(
+		by_month_by_cat[month] = collect.accumulate(
 				by_month_by_cat[month],
 				lambda l: report.cards[l['epic']].get_component(),
 				lambda l: l['effort'])
-	stacked_bar_chart(by_month_by_cat, 'effort_by_month_and_category.png',
+	chart.stacked_barchart(by_month_by_cat, 'effort_by_month_and_category.png',
 			title = 'Effort by month and category',
 			ylabel = 'Effort (man-hours)')
 
@@ -756,7 +605,7 @@ def do_worklog(args):
 			args.since.strftime("%Y/%m/%d %H:%M"))
 	query += args.constraint
 
-	jira = connect_to_jira()
+	jira = config.connect_to_jira()
 	report = Report(jira, jira.search_issues(query))
 
 	def csv(card, epic):
@@ -838,9 +687,9 @@ def main(argv):
 	if 'constraint' in args:
 		args.constraint = parse_constraint(args.constraint)
 	if 'since' in args:
-		args.since = parse_date(args.since)
+		args.since = date.smart_parse(args.since)
 	if 'until' in args:
-		args.until = parse_date(args.until, end_of_day=True)
+		args.until = date.smart_parse(args.until, end_of_day=True)
 
 	args.func(args)
 
