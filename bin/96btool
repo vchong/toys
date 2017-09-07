@@ -73,6 +73,16 @@ category_lookup = {
         23: 'OrangePi i96',
 }
 
+def load_json(obj):
+	if not obj:
+		return json.load(sys.stdin)
+
+	if isinstance(obj, str):
+		with open(obj, 'r') as f:
+			return json.load(f)
+
+	return json.load(obj)
+
 class Post(dict):
 	post_db = {}
 	topic_db = {}
@@ -230,15 +240,7 @@ class Post(dict):
 
 	@staticmethod
 	def load(obj):
-		if not obj:
-			data = json.load(sys.stdin)
-		elif isinstance(obj, str):
-			with open(obj, 'r') as f:
-				data = json.load(f)
-		else:
-			data = json.load(obj)
-
-		return [ Post(p) for p in data ]
+		return [ Post(p) for p in load_json(obj) ]
 
 def do_chart(args):
 	'''Visualise the post data as a stacked bar chart'''
@@ -486,10 +488,18 @@ def do_passwd(args):
 	config.set_password(cfg, '96btool')
 
 def do_piechart(args):
-	'''Visualise the post data as a pie chart'''
-	posts = Post.load(args.json)
-	count = collect.accumulate(posts, lambda p: p['topic']['category'])
-	chart.piechart(count, args.output, args.title)
+	'''Visualise data as a pie chart'''
+	count = load_json(args.json)
+	try:
+		# Assume the incoming JSON is a dictionary created by
+		# 96btool count
+		chart.piechart(count, args.output, args.title)
+	except AttributeError:
+		# Hmnn... guess this is just a list of posts then...
+		posts = [ Post(p) for p in count ]
+		count = collect.accumulate(posts,
+				lambda p: p['topic']['category'])
+		chart.piechart(count, args.output, args.title)
 
 def do_pull(args):
 	'''Update the local cache of the database'''
