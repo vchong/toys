@@ -273,9 +273,10 @@ class Ticket(dict):
 
 			return users[id]['user']
 
-		cfg = config.get_config()['zendesk']
-		password = keyring.get_password(cfg['server'], cfg['username'])
-		zd = zdesk.Zendesk(cfg['server'], cfg['username'], password)
+		cfg = config.get_config()
+		password = config.get_password(cfg, 'zendesk')
+		zd = zdesk.Zendesk(cfg['zendesk']['server'],
+				cfg['zendesk']['username'], password)
 
 		tickets = [ Ticket(t) for t in zd.tickets_list(get_all_pages=True)['tickets'] ]
 
