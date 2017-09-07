@@ -31,7 +31,9 @@ def get_config():
 	if 'server' not in cfg['zendesk']:
 		cfg['zendesk']['server'] = 'https://linaro.zendesk.com'
 	if 'username' not in cfg['zendesk']:
-		cfg['zendesk']['username'] = 'daniel.thompson@linaro.org'
+		cfg['zendesk']['username'] = 'daniel.thompson@linaro.org/token'
+	if 'jiralink' not in cfg['zendesk']:
+		cfg['zendesk']['jiralink'] = 'PSE-XXX'
 
 	if 'jira' not in cfg:
 		cfg['jira'] = {}
@@ -48,6 +50,8 @@ def get_config():
 		cfg['96btool']['server'] = 'https://discuss.96boards.org'
 	if 'username' not in cfg['96btool']:
 		cfg['96btool']['username'] = 'danielt'
+	if 'jiralink' not in cfg['96btool']:
+		cfg['96btool']['jiralink'] = 'PSE-XXX'
 
 	if zendesk_orig != cfg['zendesk'] or \
 	   jira_orig != cfg['jira'] or \
