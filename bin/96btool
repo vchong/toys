@@ -32,15 +32,10 @@ import textwrap
 import time
 import traceback
 
-try:
-	import toys.chart as chart
-	import toys.collect as collect
-	import toys.config as config
-	import toys.date as date
-except:
-	print("ERROR: Cannot import toys module. Is PYTHONPATH set correctly?",
-			file=sys.stderr)
-	sys.exit(1)
+import toys.chart as chart
+import toys.collect as collect
+import toys.config as config
+import toys.date as date
 
 # If it's installed we'd rather use IPython for interaction...
 try:
