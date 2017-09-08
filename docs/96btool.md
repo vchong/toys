@@ -7,9 +7,10 @@ to process the JSON into other (hopefully useful forms).
 Install
 -------
 
- * Install python3 together with modules for iso8601 and pydiscourse.
-   iso8601 is probably in a distro package called python3-iso8601 but
-   pydiscourse will probably require the use of pip3 to install.
+ * Install python3 together with modules for iso8601, matplotlib,
+   keyring and pydiscourse. Most modules are likely to be available in a
+   similarly named distro package (e.g. python3-iso8601) but pydiscourse
+   will probably require the use of pip3 to install.
  * Set PYTHONPATH to include $TOYSROOT/lib/python
 
 Quickstart
@@ -32,8 +33,8 @@ Having done that the initial pull will be much quicker although it will
 take long enough that we value --verbose showing us signs of progress:
 
     96btool pull --verbose
-    
-Finally we have an example pipeline to "who are the most prolific post 
+
+Finally we have an example pipeline to "who are the most prolific post
 authors this month". This command takes the very common form of a
 src/filter/sink pipeline. Most useful pipelines have this form (`96btool
 pull --pipe` will refresh the cache *and* share the results on the
@@ -49,8 +50,8 @@ Dates
 -----
 
 A "smart" data parser used to parse dates supplied to --since and
---until arguments throughout the tool. The parser is implemented by 
-calling out to the `date` command. Assuming you have GNU date all of 
+--until arguments throughout the tool. The parser is implemented by
+calling out to the `date` command. Assuming you have GNU date all of
 the following are valid dates:
 
  * `yesterday`
@@ -86,9 +87,9 @@ Help is also provide for each sub-command, for example:
 ### Upload your weekly activity to JIRA
 
 This pipeline you to have configured both jira and the zendesk jiralink
-property in `$HOME/.linaro_toys`. You must also have cached a suitable 
+property in `$HOME/.linaro_toys`. You must also have cached a suitable
 password using `glimpse passwd`.
-    
+
     96btool pull --pipe | \
     96btool filter \
         --since 'next friday -13 days' \
