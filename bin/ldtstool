@@ -49,15 +49,11 @@ import re
 import textwrap
 import sys
 
-try:
-	import toys.chart as chart
-	import toys.collect as collect
-	import toys.config as config
-	import toys.date as date
-except:
-	print("ERROR: Cannot import toys module. Is PYTHONPATH set correctly?",
-			file=sys.stderr)
-	sys.exit(1)
+# This code requires PYTHONPATH to include .../toys/lib/python
+import toys.chart as chart
+import toys.collect as collect
+import toys.config as config
+import toys.date as date
 
 # Try to import zdesk, failure is non-fatal since this is only needed for
 # online support (the fetch sub-tool)
