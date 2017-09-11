@@ -183,9 +183,13 @@ class Post(dict):
 		# most recent post_id)
 		latest_topics = client.latest_topics()
 
-		# the 0th topic is the freshest and should have the largest
-		# post id
-		latest_topic_id = latest_topics['topic_list']['topics'][0]['id']
+		# Although the 0th topic is normally the freshest there
+		# are some conditions where pinned topics are listed at
+		# the top of the list despite being pretty old (this
+		# is a particular problem when the user is not logged in)
+		latest_topic = max(latest_topics['topic_list']['topics'],
+				   key=lambda k: k['last_posted_at'])
+		latest_topic_id = latest_topic['id']
 		latest_topic = client._get('/t/{}.json'.format(latest_topic_id))
 		latest_post_id = max(latest_topic['post_stream']['stream'])
 
