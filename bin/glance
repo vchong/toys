@@ -111,7 +111,7 @@ class Issue(dict):
 		password = config.get_password(cfg, 'jira')
 
 		query = 'project = "Premium Services Engineering"'
-		query += ' AND (statusCategory != Done OR updatedDate >= "{}")'.format(since.strftime("%Y/%m/%d %H:%M"))
+		query += ' AND (statusCategory != Done OR updatedDate >= "{}")'.format(since.strftime("%Y/%m/%d"))
 		query += constraint
 
 		jira = JIRA(options={'server': cfg['jira']['server']},

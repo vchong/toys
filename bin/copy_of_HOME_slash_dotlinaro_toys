@@ -1,0 +1,14 @@
+[zendesk]
+server = https://linaro.zendesk.com
+username = victor.chong@linaro.org/token
+jiralink = PSE-123
+
+[jira]
+server = https://projects.linaro.org
+username = victor.chong@linaro.org
+
+[96btool]
+server = https://discuss.96boards.org
+username = vchong
+jiralink = PSE-127
+

@@ -35,7 +35,7 @@ import traceback
 import toys.chart as chart
 import toys.collect as collect
 import toys.config as config
-import toys.date as date
+import toys.date_2wksago as date
 
 # If it's installed we'd rather use IPython for interaction...
 try:

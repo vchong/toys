@@ -18,8 +18,8 @@ def get_colour(s):
 		'Marvell' : 'green',
 		'Hisilicon' : 'pink',
 
-                # Daniel Thompson and Leo Yan both hash orange
-                'Daniel Thompson' : 'green',
+                # Victor Chong and Leo Yan both hash orange
+                'Victor Chong' : 'green',
 	}
 
 	if s in override:

@@ -35,7 +35,7 @@ do your weekly report on exactly the right day each week). The resulting
 template may need to be trimmed (and augmented with other useful things
 you might have done this week that are not reported in JIRA):
 
-    glimpse weekly assignee = daniel.thompon@linaro.org
+    glimpse weekly assignee = victor.chong@linaro.org
 
 Dates
 -----

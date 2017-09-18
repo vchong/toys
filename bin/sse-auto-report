@@ -13,29 +13,29 @@
 if [ "$1" == "yearly" ]
 then
 	day=`date +'%-d'`
-	since=`date -d"-$(($day - 1)) days 00:00:00" +"%Y-%m-%d %H:%M:%S"`
-	until=`date -d"next-month -$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
-	full_year_since=`date -d"next-month -$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
-	double_year_since=`date -d"next-month -$(($day - 1)) days -2 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	since=`date -d"-$(($day - 1)) days 00:00:00" +"%Y-%m-%d"`
+	until=`date -d"next-month -$day days 23:59:59" +"%Y-%m-%d"`
+	full_year_since=`date -d"next-month -$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d"`
+	double_year_since=`date -d"next-month -$(($day - 1)) days -2 year 00:00:00" +"%Y-%m-%d"`
 	since=$full_year_since
 	tag="yearly"
 	quantum="year"
 elif [ "$1" == "quarterly" ]
 then
 	day=`date +'%-d'`
-	since=`date -d"last-month -$(($day - 1)) days -2 month 00:00:00" +"%Y-%m-%d %H:%M:%S"`
-	until=`date -d"-$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
-	full_year_since=`date -d"-$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
-	double_year_since=`date -d"-$(($day - 1)) days -2 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	since=`date -d"last-month -$(($day - 1)) days -2 month 00:00:00" +"%Y-%m-%d"`
+	until=`date -d"-$day days 23:59:59" +"%Y-%m-%d"`
+	full_year_since=`date -d"-$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d"`
+	double_year_since=`date -d"-$(($day - 1)) days -2 year 00:00:00" +"%Y-%m-%d"`
 
 	tag="quarterly"
 	quantum="quarter"
 else # monthly
 	day=`date +'%-d'`
-	since=`date -d"last-month -$(($day - 1)) days 00:00:00" +"%Y-%m-%d %H:%M:%S"`
-	until=`date -d"-$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
-	full_year_since=`date -d"-$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
-	double_year_since=`date -d"-$(($day - 1)) days -2 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
+	since=`date -d"last-month -$(($day - 1)) days 00:00:00" +"%Y-%m-%d"`
+	until=`date -d"-$day days 23:59:59" +"%Y-%m-%d"`
+	full_year_since=`date -d"-$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d"`
+	double_year_since=`date -d"-$(($day - 1)) days -2 year 00:00:00" +"%Y-%m-%d"`
 	tag="monthly"
 	quantum="month"
 fi
@@ -144,7 +144,7 @@ printf " done\n"
 96btool dump | 96btool filter --since "$double_year_since" \
 			      --until "$until" > tmp/96boards-all.json
 
-for i in danielt ldts ldts-atsuka leo-yan Loic vchong
+for i in danielt leo-yan Loic vchong
 do
 	printf "Grabbing 96Boards data for $i ..."
 	cat tmp/96boards-all.json | 96btool filter --user $i > tmp/96b-$i.json

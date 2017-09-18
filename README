@@ -13,7 +13,7 @@ Quickstart
 ----------
 
 ~~~~
-git clone https://git.linaro.org/people/daniel.thompson/toys.git
+git clone https://git.linaro.org/people/victor.chong/toys.git
 git submodule update --init --recursive
 ~~~
 

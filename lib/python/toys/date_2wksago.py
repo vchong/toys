@@ -19,7 +19,7 @@ def smart_parse(s, end_of_day=False):
 	#date = date.rstrip()
 	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
 	today = datetime.date.today()
-	lmon = today - datetime.timedelta(days=today.weekday(), weeks=1)
+	lmon = today - datetime.timedelta(days=today.weekday(), weeks=2)
 	date = str(lmon)
 	#Do NOT print! Else u'll break da 'weekly' parsing
 	#print("Report starting from", date)
@@ -47,7 +47,7 @@ def smart_parse2(s, end_of_day=False):
 	#date = date.rstrip()
 	#date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
 	today = datetime.date.today()
-	lsun = today - datetime.timedelta(days=today.weekday()) + datetime.timedelta(days=-1)
+	lsun = today - datetime.timedelta(days=today.weekday()) + datetime.timedelta(days=-8)
 	date = str(lsun)
 	#Do NOT print! Else u'll break da 'weekly' parsing
 	#print("Report starting from", date)

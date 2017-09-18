@@ -26,7 +26,7 @@ For anything more than quick queries we need to build a local cache.
 Fetching the initial data from scratch is possible but it takes *ages*.
 Instead it is recommended that you pre-populate the cache:
 
-    curl https://people.linaro.org/~daniel.thompson/96btool-20170907.db.xz | \
+    curl https://people.linaro.org/~victor.chong/96btool-20170907.db.xz | \
         unxz -c > $TOYSROOT/96btool.db
 
 Having done that the initial pull will be much quicker although it will
@@ -81,7 +81,7 @@ Help is also provide for each sub-command, for example:
     96btool filter \
         --since 'next friday -13 days' \
         --until 'next friday -7 days' \
-        --user danielt | \
+        --user vchong | \
     96btool weekly
 
 ### Upload your weekly activity to JIRA
@@ -94,7 +94,7 @@ password using `glimpse passwd`.
     96btool filter \
         --since 'next friday -13 days' \
         --until 'next friday -7 days' \
-        --user danielt | \
+        --user vchong | \
     96btool worklog --time-spent 10h
 
 ### What is the most popular board this month?
@@ -120,7 +120,7 @@ With small changes to the filter this can also summarize the effort by
 particular individuals or groups:
 
     96btool dump | \
-    96btool filter --since 'today -2 years' --user danielt,sdrobertw | \
+    96btool filter --since 'today -2 years' --user vchong,sdrobertw | \
     96btool chart --output chart.png
 
 

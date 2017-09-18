@@ -1,5 +1,5 @@
 FROM ubuntu:16.10
-MAINTAINER Daniel Thompson
+MAINTAINER Victor Chong
 
 RUN apt-get update && apt-get install -y \
 	bc \

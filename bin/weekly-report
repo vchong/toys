@@ -388,7 +388,7 @@ class Report(object):
 
 # Connect to the server
 server = 'https://projects.linaro.org'
-username = 'daniel.thompson@linaro.org'
+username = 'victor.chong@linaro.org'
 # To store the password, run this from an interactive python session
 # import keyring; keyring.set_password(server, username, "mysecret")
 password = keyring.get_password(server, username)
@@ -410,9 +410,9 @@ pse = jira.search_issues('project = "Premium Services Engineering" AND (statusCa
 
 # Only collect KWG data for special cases
 if False:
-	lmg = jira.search_issues('project = "Linaro Mobile Group" AND (statusCategory != Complete OR updatedDate >= -8d) AND assignee = "daniel.thompson@linaro.org"')
+	lmg = jira.search_issues('project = "Linaro Mobile Group" AND (statusCategory != Complete OR updatedDate >= -8d) AND assignee = "victor.chong@linaro.org"')
 	if constraint:
-		if "daniel.thompson@linaro.org" not in constraint:
+		if "victor.chong@linaro.org" not in constraint:
 			lmg = ()
 else:
 	lmg = ()

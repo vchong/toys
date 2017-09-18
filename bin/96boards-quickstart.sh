@@ -6,7 +6,7 @@
 [ Usage = "Copy the five lines below (excluding this one) to your shell" ] && \
 read -p "SSID: " ssid && read -sp "Password: " password && \
 nmcli dev wifi connect "$ssid" password "$password" && \
-repo=https://git.linaro.org/people/daniel.thompson/toys.git && \
+repo=https://git.linaro.org/people/victor.chong/toys.git && \
 wget $repo/plain/bin/96boards-quickstart.sh && \
 bash -x 96boards-quickstart.sh
 
@@ -50,7 +50,7 @@ sudo dpkg-reconfigure locales
 mkdir -p ~/Projects/upstream
 
 pushd ~/Projects
-git clone https://github.com/daniel-thompson/toys.git
+git clone https://github.com/victor.chong/toys.git
 cd toys
 make
 mv ~/public ~/Apps

@@ -25,7 +25,7 @@ import sys
 import toys.chart as chart
 import toys.collect as collect
 import toys.config as config
-import toys.date as date
+import toys.date_2wksago as date
 
 # Let's make the plotting tools optional (for those who only use glimpse
 # for their weekly report)

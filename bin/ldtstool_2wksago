@@ -53,7 +53,7 @@ import sys
 import toys.chart as chart
 import toys.collect as collect
 import toys.config as config
-import toys.date as date
+import toys.date_2wksago as date
 
 # Try to import zdesk, failure is non-fatal since this is only needed for
 # online support (the fetch sub-tool)

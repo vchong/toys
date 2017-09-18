@@ -55,7 +55,7 @@ stdout; if you want to avoid network activity then use `ldtstool dump`
 instead):
 
     ldtstool pull --pipe | \
-    ldtstool filter --assignee daniel --since 'last month' | \
+    ldtstool filter --assignee vchong --since 'last month' | \
     ldtstool markdown
 
 Dates
@@ -90,7 +90,7 @@ Help is also provide for each sub-command, for example:
 ### "What did I do this week?"
 
     ldtstool fetch --since 'next friday -13 days' | \
-    ldtstool filter --until 'next friday -7 days' --assignee daniel | \
+    ldtstool filter --until 'next friday -7 days' --assignee vchong | \
     ldtstool weekly
 
 ### Upload your weekly activity to JIRA
@@ -100,7 +100,7 @@ property in `$HOME/.linaro_toys`. You must also have cached a suitable
 password using `glimpse passwd`.
     
     ldtstool fetch --since 'next friday -13 days' | \
-    ldtstool filter --until 'next friday -7 days' --assignee daniel | \
+    ldtstool filter --until 'next friday -7 days' --assignee vchong | \
     ldtstool worklog --time-spent 10h
 
 ### Showing overall LDTS activity
