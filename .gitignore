@@ -10,3 +10,4 @@ zendesk.db
 .ipynb_checkpoints/*
 96btool.db.bak
 TODO
+export-*.json
