@@ -66,6 +66,7 @@ category_lookup = {
         21: 'Hikey 960',
         22: 'Nitrogen',
         23: 'OrangePi i96',
+        24: 'iMX7-96',
 }
 
 def load_json(obj):
