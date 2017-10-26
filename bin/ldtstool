@@ -350,12 +350,27 @@ def do_count(args):
 	if args.by_category:
 		count = get_count_by_category(tickets)
 
+	if args.by_assignee:
+		count = collect.accumulate(tickets, lambda t: t.assignee('name'))
+
 	if count:
-		if args.csv:
-			for k in sorted(count.keys()):
-				print('"{}",{}'.format(k, count[k]))
+		flat_count = [ (k, v) for k, v in count.items() ]
+
+		if args.rank:
+			flat_count = sorted(flat_count, key=lambda x: x[1], reverse=True)
 		else:
-			json.dump(count, sys.stdout, sort_keys=True)
+			flat_count = sorted(flat_count, key=lambda x: x[0])
+
+		if args.csv:
+			for k, v in flat_count:
+				print('"{}",{}'.format(k, v))
+		elif args.text:
+			for k, v in flat_count:
+				print('{:30} {}'.format(k, v))
+		else:
+			if args.rank:
+				count = flat_count
+			json.dump(count, sys.stdout, sort_keys=True, indent=2)
 	else:
 		print(len(tickets))
 
@@ -642,10 +657,13 @@ def main(argv):
 	s.set_defaults(func=do_chart)
 
 	s = subparsers.add_parser('count')
-	s.add_argument('--by-member', action='store_true')
+	s.add_argument('--by-assignee', action='store_true')
 	s.add_argument('--by-category', action='store_true')
+	s.add_argument('--by-member', action='store_true')
 	s.add_argument('--by-month', action='store_true')
 	s.add_argument('--csv', action='store_true')
+	s.add_argument('--rank', action='store_true')
+	s.add_argument('--text', action='store_true')
 	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_count)
 
