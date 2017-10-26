@@ -17,10 +17,10 @@ def smart_parse(s, end_of_day=False):
 		date = subprocess.check_output(["date", "-d", s, "+%Y-%m-%d %H:%M:%S"])
 	except subprocess.CalledProcessError as e:
 		'''
-		OS X date command does not follow GNU/Linux specifications
-		since it is Unix and will throw the CalledProcessError exception,
-		but we can make this work by installing the GNU date command as 'gdate'
-		using 'brew install coreutils'.
+		OS X date command does not support some of the GNU extensions
+		used above so ends up throwing a CalledProcessError exception.
+		We can make this work by installing the GNU date command as
+		'gdate' using 'brew install coreutils'.
 
 		https://stackoverflow.com/questions/9804966/date-command-does-not-follow-linux-specifications-mac-os-x-lion
 		'''
