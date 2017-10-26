@@ -9,7 +9,7 @@
 
 #
 # We need the live image to be editable so we cannot use Fedora Media Writer.
-# Instead we use livecd-iso-to-disk which leaves all the asserts in a vfat
+# Instead we use livecd-iso-to-disk which leaves all the assets in a vfat
 # filesystem:
 #
 #     livecd-iso-to-disk --format --reset-mbr --efi --overlay-size-mb 2047 \
@@ -118,7 +118,7 @@ unpack_rootfs () {
 }
 
 update_rootfs () {
-	# TODO: this could be a libguestfs tar-in operation!
+	# TODO: this is broken... it needs to act on the unsquashed data
 	mkdir -p tmp
 	sudo mount -o loop squashfs-root/LiveOS/rootfs.img tmp
 	tar --owner root --group root -C rootfs-overlay/ -cf - . | sudo tar -C tmp/ -xf -
@@ -148,7 +148,9 @@ rootfs="$(find_rootfs "$img")"
 #unpack_rootfs $rootfs
 #update_rootfs $rootfs
 #pack_rootfs $rootfs
-[ -e "$rootfs.bak" ] && sudo mv "$rootfs.bak" "$rootfs"
+#[ -e "$rootfs.bak" ] && sudo mv "$rootfs.bak" "$rootfs"
+# This is much quicker... make the modules available from the filesystems so
+# we can untar them into the overlay and reboot!
 sudo tar --owner root --group root -C rootfs-overlay/ -cf "$img/rootfs-overlay.tar.gz" . 
 
 umount_usb
