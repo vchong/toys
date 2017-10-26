@@ -136,7 +136,7 @@ class Ticket(dict):
 			'sample', 'samsung', 'sharp_zarus_sl5500',
 			'staging_vexpress_a9', 'v_fav', 'vicky_test',
 			'video_condecs', 'zd_test', 'zendesk', 'arrow',
-                        'variscite'))
+                        'variscite', 'landing_team_lt'))
 
 		unknown = set(tags) - nonglobs
 		if len(unknown):
