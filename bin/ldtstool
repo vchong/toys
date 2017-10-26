@@ -324,7 +324,9 @@ def get_count_by_category(tickets):
 def do_chart(args):
 	tickets = Ticket.load(args.json)
 
-	if args.by_category:
+	if args.by_assignee:
+		seive = lambda t: t.assignee('name')
+	elif args.by_category:
 		seive = lambda t: t.category()
 	else:
 		seive = lambda t: t.orgname(reduce_namespace=True)
@@ -651,6 +653,7 @@ def main(argv):
 	subparsers.required = True	# Can't be set using named arguments (yet)
 
 	s = subparsers.add_parser('chart')
+	s.add_argument('--by-assignee', action='store_true')
 	s.add_argument('--by-category', action='store_true')
 	s.add_argument("--output", default="ldtstool.png")
 	s.add_argument("json", nargs='?')
