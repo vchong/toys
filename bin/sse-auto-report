@@ -10,9 +10,9 @@
 # General prep
 #
 
-if [ "$1" == "yearly" ]
+if [ "$1" = "yearly" ]
 then
-	day=`date +'%-d'`
+	day=$(date +'%-d')
 	since=`date -d"-$(($day - 1)) days 00:00:00" +"%Y-%m-%d %H:%M:%S"`
 	until=`date -d"next-month -$day days 23:59:59" +"%Y-%m-%d %H:%M:%S"`
 	full_year_since=`date -d"next-month -$(($day - 1)) days -1 year 00:00:00" +"%Y-%m-%d %H:%M:%S"`
@@ -20,7 +20,7 @@ then
 	since=$full_year_since
 	tag="yearly"
 	quantum="year"
-elif [ "$1" == "quarterly" ]
+elif [ "$1" = "quarterly" ]
 then
 	day=`date +'%-d'`
 	since=`date -d"last-month -$(($day - 1)) days -2 month 00:00:00" +"%Y-%m-%d %H:%M:%S"`
@@ -62,11 +62,11 @@ cd $SSE_DATA_DIR
 
 printf "Generating solutions engineering report ..."
 [ -e tmp/monthly.html ] || \
-    glimpse monthly --fully-automatic --since "$since" --until "$until" > tmp/monthly.html 2> tmp/monthly.errlog
+    glimpse monthly --fully-automatic --since "$since" --until "$until" > tmp/monthly.html
 sed -i -e '/^<\/*html>$/d' -e '/^<\/*head>$/d' -e '/^<title>/d' -e '/^<\/*body>/d' tmp/monthly.html
 printf " done\nGenerating solutions engineering graphs ..."
-[ -e tmp/piechart.errlog ] || \
-    glimpse piechart --since "$since" --until "$until" 2> tmp/piechart.errlog
+[ -e tmp/piechart.empty ] || \
+    glimpse piechart --since "$since" --until "$until" > tmp/piechart.empty
 i=1
 for fname in \
 	card_tracker.png \
@@ -86,8 +86,8 @@ printf " done\n"
 #
 
 printf "Grabbing LDTS monthly activity ..."
-[ -e tmp/ldtstool-pull.errlog ] || \
-    ldtstool pull 2> tmp/ldtstool-pull.errlog
+[ -e tmp/ldtstool-pull.empty ] || \
+    ldtstool pull > tmp/ldtstool-pull.empty
 printf " done\n"
 
 printf "Generating LDTS activity graphs ."
