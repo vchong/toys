@@ -59,7 +59,11 @@ displayname_aliases = {
 }
 
 component_categories = (
-	'BSP Analysis', 'Engineering works', 'Member Build', 'LAVA', 'Training', '96Boards', 'Upstream Consultancy', 'Metis', 'Linaro'
+	'BSP Analysis', 'Engineering works', 'Member Build', 'LAVA', 'Training', 'Upstream Consultancy'
+)
+
+maybe_component_categories = (
+    '96Boards', 'LDTS', 'Metis', 'Linaro'
 )
 
 def warn(issue, msg):
@@ -182,12 +186,12 @@ class Issue(object):
 			if name in component_aliases:
 				name = component_aliases[name]
 			components.append(name)
-		for p in component_categories:
-			if p in components and p != "Linaro":
+		for p in component_categories + maybe_component_categories:
+			if p in components:
 				return p
 
 		warn(self, 'does not match the component categories')
-		return self.key
+		return self.key + ': No category tag'
 
 	def get_member(self):
 		components = []
@@ -199,6 +203,9 @@ class Issue(object):
 				name = component_aliases[name]
 			components.append(name)
 		for p in component_categories:
+			if p in components:
+				components.remove(p)
+		for p in maybe_component_categories:
 			if len(components) < 2:
 				break
 			if p in components:
@@ -206,12 +213,13 @@ class Issue(object):
 
 		if len(components) == 0:
 			warn(self, 'has no member')
+			return self.key + ': No member tag'
 		elif len(components) >= 2:
 			warn(self, 'has too many members '+
 					'(incomplete category list?)')
-		else:
-			return components[0]
-		return self.key
+			return self.key + ': Too many member tags'
+
+		return components[0]
 
 	def get_assignees(self):
 		msg = ""
@@ -534,7 +542,7 @@ def do_piechart(args):
 			title = 'Effort by month and category',
 			ylabel = 'Effort (man-hours)')
 
-        ## Effort, by month and by developer
+	## Effort, by month and by developer
 
 
 	### Total count of cards
