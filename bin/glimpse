@@ -300,7 +300,6 @@ class Report(object):
 				warn(b, 'is not linked to an EPIC')
 				continue
 			if b.parent not in self.cards:
-				warn(b, 'is linked to a closed card {}'.format(b.parent))
 				self.add(self.jira.issue(b.parent))
 				if b.parent not in self.cards:
 					warn(b, 'is linked to non-existant {}'.format(b.parent))
