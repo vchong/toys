@@ -92,6 +92,7 @@ class Ticket(dict):
 			'qemu_vritualization': 'qemu',
 			'qemu_virtualization': 'qemu',
 			'networking_lng': 'networking',
+                        'debian_ubuntu' : 'distros',
 			'open_embedded_oe': 'distros',
 			'open_embedded': 'distros',
 			'ubuntu': 'distros',
