@@ -501,8 +501,14 @@ def do_filter(args):
 	if args.worklog_since:
 		since = date.smart_parse(args.worklog_since)
 		for i in issues:
-			i['worklog'] = [ w for w in i['worklog'] if 
+			i['worklog'] = [ w for w in i['worklog'] if
 					iso8601.parse_date(w['started']) >= since ]
+
+	if args.worklog_until:
+		until = date.smart_parse(args.worklog_until)
+		for i in issues:
+			i['worklog'] = [ w for w in i['worklog'] if
+					iso8601.parse_date(w['started']) <= until ]
 
 	if args.no_worklog:
 		issues = [ i for i in issues if i['worklog'] ]
@@ -645,6 +651,7 @@ def main(argv):
 	s.add_argument('--no-keep-parent', action='store_true')
 	s.add_argument('--no-worklog', action='store_true')
 	s.add_argument('--worklog-since')
+	s.add_argument('--worklog-until')
 	s.add_argument("json", nargs='?')
 	s.set_defaults(func=do_filter)
 
