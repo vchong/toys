@@ -251,7 +251,7 @@ class Issue(dict):
 class Worklog(dict):
 	re_progress = re.compile('^(h[123456]\.|#+)?\s*[Pp]rogress\s*')
 	re_plans = re.compile('^(h[123456]\.|#+)?\s*[Pp]lans\s*')
-	re_split_worklog = re.compile('\n+ *[*+-]  *|^ *[*+-]  *|\n\n+')
+	re_split_worklog = re.compile('\n+ *[*+-]+  *|^ *[*+-]+  *|\n\n+')
 
 	def date(self, key):
 		if key not in self:
