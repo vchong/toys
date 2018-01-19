@@ -75,11 +75,6 @@ def warn(issue, msg):
 	print('\n'.join(lines), file=sys.stderr)
 
 class Issue(dict):
-	re_ymd = re.compile('(20[0-9][0-9]).?([0-9][0-9]).?([0-9][0-9])')
-	re_progress = re.compile('^(h[123456]\.|#+)?\s*[Pp]rogress\s*')
-	re_plans = re.compile('^(h[123456]\.|#+)?\s*[Pp]lans\s*')
-	re_split_worklog = re.compile('\n+ *[*+-]  *|^ *[*+-]  *|\n\n+')
-
 	@staticmethod
 	def wrap(jira, issue):
 		'''Factory method to turn a JIRA issue into a JSON one'''
