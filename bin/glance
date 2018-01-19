@@ -85,7 +85,6 @@ class Issue(dict):
 			summary = summary.replace(old, new)
 		self['summary'] = summary.strip()
 
-		self['engineering_status'] = self['fields']['customfield_10022']
 		# This should probably transition into a method
 		self['url'] = 'https://projects.linaro.org/browse/' + self['key']
 
