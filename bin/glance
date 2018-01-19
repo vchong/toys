@@ -105,7 +105,7 @@ class Issue(dict):
 		return self
 
 	@staticmethod
-	def fetch(since, constraint='', recurse=True):
+	def fetch(since, constraint=''):
 		cfg = config.get_config()
 		password = config.get_password(cfg, 'jira')
 
@@ -114,13 +114,16 @@ class Issue(dict):
 		query += constraint
 
 		jira = JIRA(options={'server': cfg['jira']['server']},
-			basic_auth=(cfg['jira']['username'], password))     
+			basic_auth=(cfg['jira']['username'], password))
 
-		issues = [ Issue.wrap(jira, i) \
+		issues = []
+		new_issues = [ Issue.wrap(jira, i) \
 				for i in jira.search_issues(query) ]
 
-		# TODO: ideally this would be a multi-pass approach
-		if recurse:
+		while len(new_issues):
+			issues += new_issues
+			new_issues = []
+
 			keys = set([ i['key'] for i in issues ])
 
 			for issue in list(issues):
@@ -129,8 +132,15 @@ class Issue(dict):
 						rel = link['outwardIssue']
 					else:
 						rel = link['inwardIssue']
-					j = jira.issue(rel['key'])
-					issues.append(Issue.wrap(jira, j))
+					if rel['key'] not in keys:
+						j = jira.issue(rel['key'])
+						new_issues.append(Issue.wrap(jira, j))
+						keys.add(rel['key'])
+				if 'parent' in issue:
+					if issue['parent'] not in keys:
+						j = jira.issue(issue['parent'])
+						new_issues.append(Issue.wrap(jira, j))
+						keys.add(issue['parent'])
 
 		return issues
 
