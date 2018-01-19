@@ -560,6 +560,72 @@ def do_interact(args):
 
 	interact()
 
+def do_monthly(args):
+	issues = Issue.load(args.json)
+	report = Report(issues)
+
+	print('''\
+<html>
+<head>
+<title>Monthly report</title>
+</head>
+<body>
+<table border=2>
+<tr>
+<td>Member</td>
+<td>Accomplishments</td>
+<td>Next Month's Plans</td>
+</tr>
+''')
+
+	for member in sorted(report.members.keys()):
+		# Make sure we don't double-report support activity
+		if member == "Support":
+			continue
+
+		print('<tr><td>{}</td>'.format(member))
+		print('<td><ul>')
+		for card in sorted(report.members[member], key=lambda c: c['key']):
+			just_in_time = False
+			for log in report.worklog(card['key'], recurse=True):
+				(progress, plans) = log.parse()
+
+				# Abridge long reports (either leave the ellipsis or summarize manually)
+				if len(progress) > 7:
+					progress = progress[:4] + ['...',]
+
+				for bullet in progress:
+					if not just_in_time:
+						print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+							card['summary'], card['url'], card['key']))
+						just_in_time = True
+
+					print('<li>{}</li>'.format(bullet))
+			if just_in_time:
+				print('</ul></li>')
+		print('</ul></td>')
+		print('<td><ul>')
+		for card in sorted(report.members[member], key=lambda c: c['key']):
+			just_in_time = False
+			for log in report.worklog(card['key'], recurse=True):
+				(progress, plans) = log.parse()
+				for bullet in plans:
+					if not just_in_time:
+						print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+							card['summary'], card['url'], card['key']))
+						just_in_time = True
+					print('<li>{}</li>'.format(bullet))
+			if just_in_time:
+				print('</ul></li>')
+		print('</ul></td>')
+		print('</tr>')
+	print ('''\
+</table>
+</body>
+''')
+
+
+
 def do_passwd(args):
 	cfg = config.get_config()
 	password = config.set_password(cfg, 'jira')
@@ -664,6 +730,11 @@ def main(argv):
 	s = subparsers.add_parser('interact')
 	s.add_argument("json")
 	s.set_defaults(func=do_interact)
+
+	s = subparsers.add_parser("monthly",
+			help="Generate a (template) monthly report")
+	s.add_argument("json", nargs='?')
+	s.set_defaults(func=do_monthly)
 
 	s = subparsers.add_parser("summary")
 	s.add_argument("--template",
