@@ -165,7 +165,9 @@ class Issue(dict):
 		return self['fields']['issuetype']['name'] == 'Sub-task'
 
 	def is_epic(self):
-		return self['fields']['issuetype']['name'] == 'Epic'
+		# PSE uses 'Epic' but OCE uses 'Initiative' :-(
+		return self['fields']['issuetype']['name'] == 'Epic' or \
+	               self['fields']['issuetype']['name'] == 'Initiative'
 
 	def categorize(self):
 		lookup = {
