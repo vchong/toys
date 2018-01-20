@@ -10,8 +10,6 @@ def add_percent_labels(labels, values):
 
 def accumulate(things, sieve, count=lambda t: 1):
 	'''Collate things into categories and count (or accumulate) them
-
-	TODO: was called collect_and_count_by() in the not-yet-refactored code
 	'''
 	results = collections.defaultdict(int)
 	for t in things:
@@ -20,8 +18,6 @@ def accumulate(things, sieve, count=lambda t: 1):
 
 def collate(things, sieve):
 	'''Collate things into categories
-
-	TODO: was called collect_by() in the not-yet-refactored code
 	'''
 	results = collections.defaultdict(list)
 	for t in things:
