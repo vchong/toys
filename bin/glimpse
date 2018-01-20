@@ -1,0 +1,704 @@
+#!/usr/bin/env python3
+
+'''
+glimpse - Extract JIRA status to generate template report
+
+Prerequisites (ubuntu:16.04):
+
+ * sudo apt -y install python3 python3-pip
+ * sudo apt -y install python3-iso8601 python3-keyring
+ * sudo pip3 install jira
+
+'''
+
+import argparse
+import collections
+import copy
+import datetime
+from jira.client import JIRA
+import iso8601
+import os
+import re
+import textwrap
+import sys
+
+import toys.chart as chart
+import toys.collect as collect
+import toys.config as config
+import toys.date as date
+
+# Let's make the plotting tools optional (for those who only use glimpse
+# for their weekly report)
+try:
+	import matplotlib.pyplot as plt
+except:
+	pass
+
+#
+# Collection of find/replace strings to massage a summary for
+#  readability.
+#
+# Ideally all we would do with hacks is strip our redundant idioms
+# such as including the issuetype in the summary.
+#
+# However for now we go a bit deeper and try to remove other
+# redundant information from the summary (such as member name) or
+# excessive use of verbs.
+#
+hacks = (
+	('WIFI', 'WiFi'),
+	('wifi', 'WiFi'),
+)
+
+component_aliases = {
+	'Android-upstreaming' : 'Linaro'
+}
+
+displayname_aliases = {
+	'Esla.Anzaku@linaro.org' : 'Elsa'
+}
+
+component_categories = (
+	'BSP Analysis', 'Engineering works', 'Member Build', 'LAVA', 'Training', 'Upstream Consultancy'
+)
+
+maybe_component_categories = (
+    '96Boards', 'LDTS', 'Metis', 'Linaro'
+)
+
+def warn(issue, msg):
+	lines = textwrap.wrap('{} {}'.format(issue.url, msg),
+			initial_indent=   'WARNING: ',
+			subsequent_indent='         ')
+	print('\n'.join(lines), file=sys.stderr)
+
+class Issue(object):
+	re_ymd = re.compile('(20[0-9][0-9]).?([0-9][0-9]).?([0-9][0-9])')
+	re_progress = re.compile('^(h[123456]\.|#+)?\s*[Pp]rogress\s*')
+	re_plans = re.compile('^(h[123456]\.|#+)?\s*[Pp]lans\s*')
+	re_split_worklog = re.compile('\n+ *[*+-]  *|^ *[*+-]  *|\n\n+')
+
+	def __init__(self, issue, jira):
+		self._raw = issue
+
+		summary = issue.fields.summary
+		for (old, new) in hacks:
+			summary = summary.replace(old, new)
+		self.summary = summary.strip()
+
+		if issue.fields.assignee:
+			displayname = issue.fields.assignee.displayName
+			if displayname in displayname_aliases:
+				displayname = displayname_aliases[displayname]
+			self.assignees = set((displayname,))
+		else:
+			self.assignees = set(("Noone",))
+		self.fields = issue.fields
+		self.engineering_status = issue.fields.customfield_10022
+		self.key = issue.key
+		if self.is_story():
+			# Canonical form for customfield_10005: u'PS-63'
+			self.parent = issue.fields.customfield_10005
+		elif self.is_subtask():
+			# Canonical form for parent: <JIRA Issue: key=u'KWG-56', id=u'13944'>
+			self.parent = issue.fields.parent.key
+		self.url = 'https://projects.linaro.org/browse/' + issue.key
+
+		self._parse_worklog(jira)
+
+	def _parse_worklog(self, jira):
+		self.worklog = []
+
+		for id in jira.worklogs(self.key):
+			self.worklog.append(jira.worklog(self.key, id))
+
+		# Parse into progress and plans (and automatically un-bullet)
+		for log in self.worklog:
+			log.progress = []
+			log.plans = []
+			active = log.progress
+
+			comment = log.comment.replace('\r', '')
+
+			for ln in re.split(self.re_split_worklog, log.comment.replace('\r', '')):
+				ln = ln.replace('\n', ' ').strip()
+
+				m = re.match(self.re_progress, ln)
+				if m:
+					ln = ln[m.end():]
+
+				m = re.match(self.re_plans, ln)
+				if m:
+					active = log.plans
+					ln = ln[m.end():]
+
+				if ln:
+					active.append(ln)
+
+	def is_story(self):
+		return self.fields.issuetype.name == 'Story'
+
+	def is_subtask(self):
+		'''A sub-task is similar to a blueprint but has a proper
+		parent-child relationship with the engineering card.
+		'''
+		return self.fields.issuetype.name == 'Sub-task'
+
+	def is_epic(self):
+		return self.fields.issuetype.name == 'Epic'
+
+	def categorize(self):
+		lookup = {
+			'Open': (),
+			'TODO': ('Plan',),
+			'In Progress' : ('Plan', 'Progress'),
+			'Resolved' : ('Progress',),
+			'Closed' : ('Progress',),
+		}
+
+		if self.fields.status.name in lookup:
+			return set(lookup[self.fields.status.name])
+
+		warn(self, 'has bad status ({})'.format(self.fields.status.name))
+		return set()
+
+	def _get_date(self, date):
+		if not date:
+			return None
+
+		return iso8601.parse_date(date)
+
+	def created(self):
+		return iso8601.parse_date(self._raw.fields.created)
+
+	def resolved(self):
+		d = self._raw.fields.resolutiondate
+		if not d:
+			return None
+		return iso8601.parse_date(d)
+
+	def get_component(self):
+		components = []
+		if not self.key.startswith('PSE-'):
+			components += ('Linaro', 'Engineering works')
+		for c in self._raw.fields.components:
+			name = c.name
+			if name in component_aliases:
+				name = component_aliases[name]
+			components.append(name)
+		for p in component_categories + maybe_component_categories:
+			if p in components:
+				return p
+
+		warn(self, 'does not match the component categories')
+		return self.key + ': No category tag'
+
+	def get_member(self):
+		components = []
+		if not self.key.startswith('PSE-'):
+			components += ('Linaro', 'Engineering works')
+		for c in self._raw.fields.components:
+			name = c.name
+			if name in component_aliases:
+				name = component_aliases[name]
+			components.append(name)
+		for p in component_categories:
+			if p in components:
+				components.remove(p)
+		for p in maybe_component_categories:
+			if len(components) < 2:
+				break
+			if p in components:
+				components.remove(p)
+
+		if len(components) == 0:
+			warn(self, 'has no member')
+			return self.key + ': No member tag'
+		elif len(components) >= 2:
+			warn(self, 'has too many members '+
+					'(incomplete category list?)')
+			return self.key + ': Too many member tags'
+
+		return components[0]
+
+	def get_assignees(self):
+		msg = ""
+		for a in sorted(self.assignees):
+			msg += ", {}".format(a.partition(' ')[0])
+		return msg.lstrip(', ')
+
+	def get_summary(self, member):
+		return '{}: {} [{}] ({})'.format(member, self.summary,
+				self.get_assignees(), self.key)
+
+	def get_worklog(self, jira, age=None, recurse=False):
+		logs = list(self.worklog)
+		if recurse and self.is_epic():
+			for bp in self.blueprints:
+				logs += bp.worklog
+
+		# Filter by date if requested
+		if age:
+			logs = [g for g in logs
+				if iso8601.parse_date(g.started) >= age[0] and
+				   iso8601.parse_date(g.started) <= age[1]]
+
+		# Return work log in time sorted order
+		return sorted(logs, key=lambda g: g.started)
+
+class Report(object):
+	wrappers = (
+		textwrap.TextWrapper(),
+		textwrap.TextWrapper(initial_indent=' * ', subsequent_indent='   '),
+		textwrap.TextWrapper(initial_indent='   - ', subsequent_indent='     ')
+	)
+
+	def __init__(self, jira, issues=None):
+		self.jira = jira
+		self.issues = {}
+		self.cards = {}
+		self.blueprints = {}
+		self.members = {}
+
+		if issues:
+			for id in issues:
+				# Check for links to "alien" JIRA projects
+				links = jira.issue(id).fields.issuelinks
+				if len(links) != 0:
+					for link in links:
+						if hasattr(link, 'outwardIssue'):
+							rel = link.outwardIssue
+						else:
+							rel = link.inwardIssue
+						self.add(jira.issue(rel.key))
+
+				self.add(jira.issue(id))
+			self.link_blueprints()
+
+	def add(self, raw):
+		issue = Issue(raw, self.jira)
+		self.issues[issue.key] = issue
+
+		if issue.is_story() or issue.is_subtask():
+			self.blueprints[issue.key] = issue
+		elif issue.is_epic():
+			self.cards[issue.key] = issue
+
+			components = []
+			for c in issue.fields.components:
+				name = c.name
+				if name in component_aliases:
+					name = component_aliases[name]
+				components.append(name)
+
+			name = issue.get_member()
+			if name not in self.members:
+				self.members[name] = []
+			self.members[name].append(issue)
+
+			issue.blueprints = []
+		else:
+			warn(issue, 'has unexpected issuetype {}'.format(
+				issue.fields.issuetype.name))
+
+	def link_blueprints(self):
+		'''Iterate over the blueprints and link them to their cards.'''
+		for b in self.blueprints.values():
+			if not b.parent:
+				warn(b, 'is not linked to an EPIC')
+				continue
+			if b.parent not in self.cards:
+				self.add(self.jira.issue(b.parent))
+				if b.parent not in self.cards:
+					warn(b, 'is linked to non-existant {}'.format(b.parent))
+					continue
+
+			card = self.cards[b.parent]
+			card.assignees |= b.assignees
+			card.blueprints.append(b)
+
+	@staticmethod
+	def print(msg, level=0):
+		print('\n'.join(Report.wrappers[level].wrap(msg)))
+
+def parse_constraint(args):
+	'''Generate any additional query constraints'''
+	if len(args) == 0:
+		return ''
+	constraint = 'AND ({})'.format(' '.join(args))
+
+	# We employ special handling on the constraint to ensure that the @
+	# symbol is always escaped. @ is a reserved JQL character so cannot
+	# appear in raw form outside of a string and JQL strings are complex to
+	# pass from the command line. This prevents some contraints from being
+	# applied but makes is easy to pass e-mail address from the shell.
+	return constraint.replace('@', '\\u0040')
+
+def do_weekly(args):
+	query = 'project = "Premium Services Engineering"'
+	query += ' AND (statusCategory != Complete OR updatedDate >= "{}")'.format(
+			args.since.strftime("%Y/%m/%d %H:%M"))
+	query += args.constraint
+
+	jira = config.connect_to_jira()
+	report = Report(jira, jira.search_issues(query))
+
+	report.print('## Progress')
+	for member in sorted(report.members.keys()):
+		for card in sorted(report.members[member], key=lambda x: x.key):
+			report.print('\n')
+			report.print(card.get_summary(member), level=1)
+			for log in card.get_worklog(
+					jira, age=(args.since, args.until),
+					recurse=True):
+				for bullet in log.progress:
+					report.print(bullet, level=2)
+
+	report.print('')
+	report.print('## Plans')
+
+	for member in sorted(report.members.keys()):
+		for card in sorted(report.members[member], key=lambda x: x.key):
+			report.print('\n')
+			report.print(card.get_summary(member), level=1)
+			for log in card.get_worklog(
+					jira, age=(args.since, args.until),
+					recurse=True):
+				for bullet in log.plans:
+					report.print(bullet, level=2)
+
+def do_monthly(args):
+	query = 'project = "Premium Services Engineering"'
+	query += ' AND (statusCategory != Complete OR updatedDate >= "{}")'.format(
+			args.since.strftime("%Y/%m/%d %H:%M"))
+	query += args.constraint
+
+	jira = config.connect_to_jira()
+	report = Report(jira, jira.search_issues(query))
+
+	print('''\
+<html>
+<head>
+<title>Monthly report: {} to {}</title>
+</head>
+<body>
+<table border=2>
+<tr>
+<td>Member</td>
+<td>Accomplishments</td>
+<td>Next Month's Plans</td>
+</tr>
+'''.format(args.since.strftime("%Y/%m/%d %H:%M"),
+	args.until.strftime("%Y/%m/%d %H:%M")))
+
+	for member in sorted(report.members.keys()):
+		print('<tr><td>{}</td>'.format(member))
+		print('<td><ul>')
+		for card in sorted(report.members[member], key=lambda x: x.key):
+			if not args.fully_automatic:
+				print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+					card.summary, card.url, card.key))
+				just_in_time = True
+			else:
+				just_in_time = False
+			for log in card.get_worklog(
+					jira, age=(args.since, args.until),
+					recurse=True):
+				for bullet in log.progress:
+					if not just_in_time:
+						print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+							card.summary, card.url, card.key))
+					just_in_time = True
+
+					print('<li>{}</li>'.format(bullet))
+			if just_in_time:
+				print('</ul></li>')
+		print('</ul></td>')
+		print('<td><ul>')
+		for card in sorted(report.members[member], key=lambda x: x.key):
+			if not args.fully_automatic:
+				print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+					card.summary, card.url, card.key))
+				just_in_time = True
+			else:
+				just_in_time = False
+			for log in card.get_worklog(
+					jira, age=(args.since, args.until),
+					recurse=True):
+				for bullet in log.plans:
+					if not just_in_time:
+						print('<li>{} (<a href="{}">{}</a>)<ul>'.format(
+							card.summary, card.url, card.key))
+						just_in_time = True
+					print('<li>{}</li>'.format(bullet))
+			if just_in_time:
+				print('</ul></li>')
+		print('</ul></td>')
+		print('</tr>')
+	print ('''\
+</table>
+</body>
+''')
+
+def do_passwd(args):
+	cfg = config.get_config()
+	config.set_password(cfg, 'jira')
+
+def do_piechart(args):
+	full_year_since = args.until.replace(year=args.until.year - 1) + datetime.timedelta(minutes=1)
+
+	since = args.since.strftime("%Y-%m-%d")
+	until = args.until.strftime("%Y-%m-%d")
+	fys = full_year_since.strftime("%Y-%m-%d")
+
+	query = 'project = "Premium Services Engineering"'
+	query += ' AND (statusCategory != Complete OR updatedDate >= "{}")'.format(
+			full_year_since.strftime("%Y/%m/%d %H:%M"))
+	query += args.constraint
+
+	jira = config.connect_to_jira()
+	report = Report(jira, jira.search_issues(query))
+
+	def summarize(categorize_with, age):
+		data = {}
+
+		for card in report.cards.values():
+			logs = card.get_worklog(jira, recurse=True, age=age)
+			# track effort in hours...
+			effort = sum(l.timeSpentSeconds for l in logs) / (60 * 60)
+
+			if effort < 0.05:
+				continue
+
+			c = str(categorize_with(card))
+			if c not in data:
+				data[c] = { 'count':0, 'effort':0.0, 'cards':[] }
+
+			data[c]['effort'] += effort
+			data[c]['count'] += 1
+			# Tracking card id is good for debugging!
+			data[c]['cards'].append(card.key)
+
+		return data
+
+	def plot(title, fname, data, field):
+		things = {}
+		for k in data.keys():
+			things[k] = data[k][field]
+		chart.piechart(things, fname, title=title)
+
+	by_member = summarize(Issue.get_member, age=(args.since, args.until))
+	plot('PSE card summary per member ({} to {})'.format(since, until),
+	     'cards_per_member.png', by_member, 'count')
+	plot('PSE effort summary per member ({} to {})'.format(since, until),
+	     'effort_per_member.png', by_member, 'effort')
+
+	by_member = summarize(Issue.get_member, age=(full_year_since, args.until))
+	plot('PSE card summary per member ({} to {})'.format(fys, until),
+	     'cards_per_member-full_year.png', by_member, 'count')
+	plot('PSE effort summary per member ({} to {})'.format(fys, until),
+	     'effort_per_member-full_year.png', by_member, 'effort')
+
+	by_component = summarize(Issue.get_component, age=(args.since, args.until))
+	plot('PSE effort summary by category ({} to {})'.format(since, until),
+	     'effort_by_category.png', by_component, 'effort')
+
+	by_component = summarize(Issue.get_component, age=(full_year_since, args.until))
+	plot('PSE effort summary by category ({} to {})'.format(fys, until),
+	     'effort_by_category-full_year.png'.format(full_year_since.year), by_component, 'effort')
+
+	by_worklog = []
+	for c in report.cards.values():
+		worklog = c.get_worklog(jira, recurse=True, age=(full_year_since, args.until))
+		worklog = [ { 'raw': w } for w in worklog ]
+		for w in worklog:
+			l = w['raw']
+			w['date'] = iso8601.parse_date(l.started)
+			w['effort'] = l.timeSpentSeconds / (60 * 60)
+			w['epic'] = c.key
+		by_worklog += worklog
+
+	### Effort, by month and by member
+
+	by_month_by_member = collect.collate(by_worklog, lambda w: w['date'].strftime('%Y-%m'))
+	for month in by_month_by_member.keys():
+		by_month_by_member[month] = collect.accumulate(
+				by_month_by_member[month],
+				lambda l: report.cards[l['epic']].get_member(),
+				lambda l: l['effort'])
+	chart.stacked_barchart(by_month_by_member, 'effort_by_month_and_member.png',
+			title = 'Effort by month and member',
+			ylabel = 'Effort (man-hours)')
+
+	### Effort, by month and by category
+
+	by_month_by_cat = collect.collate(by_worklog, lambda w: w['date'].strftime('%Y-%m'))
+	for month in by_month_by_cat.keys():
+		by_month_by_cat[month] = collect.accumulate(
+				by_month_by_cat[month],
+				lambda l: report.cards[l['epic']].get_component(),
+				lambda l: l['effort'])
+	chart.stacked_barchart(by_month_by_cat, 'effort_by_month_and_category.png',
+			title = 'Effort by month and category',
+			ylabel = 'Effort (man-hours)')
+
+	## Effort, by month and by developer
+
+
+	### Total count of cards
+
+	all_cards = report.cards.copy()
+	all_cards.update(report.blueprints)
+	open_cards = [ c for c in all_cards.values() if c.resolved() != None ]
+
+	by_month = {}
+	d = full_year_since
+	while d < args.until:
+		by_month['{:04d}-{:02d}'.format(d.year, d.month)] = []
+		d = d.replace(month=d.month + 1) if d.month < 12 else d.replace(d.year + 1, 1)
+
+	created_by_month = copy.deepcopy(by_month)
+	for c in all_cards.values():
+		d = c.created()
+		if d < full_year_since or d > args.until:
+			continue
+		created_by_month['{:04d}-{:02d}'.format(d.year, d.month)].append(c.key)
+
+	resolved_by_month = copy.deepcopy(by_month)
+	for c in all_cards.values():
+		d = c.resolved()
+		if d == None or d < full_year_since or d > args.until:
+			continue
+		resolved_by_month['{:04d}-{:02d}'.format(d.year, d.month)].append(c.key)
+
+	labels = sorted(by_month.keys())
+	created_bys = [ len(created_by_month[l]) for l in labels ]
+	resolved_bys = [ len(resolved_by_month[l]) for l in labels ]
+
+	backwards = [ b for b in zip(created_bys, resolved_bys) ]
+	backwards.reverse()
+	count = len(open_cards)
+	num_open = []
+	for c, r in backwards:
+		num_open.insert(0, count)
+		count += r - c
+
+	fig, ax = plt.subplots()
+	bar_width = 0.25
+	index = [x+bar_width for x in range(len(labels))]
+	opacity = 0.4
+
+	plt.plot([x+bar_width for x in index], num_open, color='b', linestyle='--', marker='o', label='Work to be completed')
+	rects1 = plt.bar(index, created_bys, bar_width,alpha=opacity, color='b',label='New work')
+	rects2 = plt.bar([x+bar_width for x in index], resolved_bys, bar_width,alpha=opacity,color='r',label='Completed work')
+
+	#plt.xlabel('Time')
+	plt.ylabel('Issues (epics & stories)')
+	plt.title('Work items tracked per-month')
+	plt.grid(zorder=0)
+	plt.xticks([x+bar_width for x in index], labels, rotation=90)
+	lgd = plt.legend(bbox_to_anchor=(1.05, 1), loc=2)
+	plt.savefig('card_tracker.png', bbox_extra_artists=(lgd,), bbox_inches='tight')
+	plt.close()
+
+def do_worklog(args):
+	query = 'project = "Premium Services Engineering"'
+	query += ' AND updatedDate >= "{}"'.format(
+			args.since.strftime("%Y/%m/%d %H:%M"))
+	query += args.constraint
+
+	jira = config.connect_to_jira()
+	report = Report(jira, jira.search_issues(query))
+
+	def csv(card, epic):
+		for worklog in card.worklog:
+			print('"{}","{}","{}","{}","{}","{}","{}","{}"'.format(
+				card.key, card.summary, epic.key,
+				card.get_member(), card.get_component(),
+				worklog.started, worklog.timeSpentSeconds,
+				worklog.author.displayName))
+
+	for member in sorted(report.members.keys()):
+		for epic in sorted(report.members[member], key=lambda x: x.key):
+			csv(epic, epic)
+			for story in epic.blueprints:
+				csv(story, epic)
+
+def main(argv):
+	parser = argparse.ArgumentParser()
+	subparsers = parser.add_subparsers(dest='sub-command')
+	subparsers.required = True	# Can't be set using named arguments (yet)
+
+	# create the parser for the "weekly" command
+	s = subparsers.add_parser("weekly",
+			help="Generate a (template) weekly report")
+	s.add_argument("--since", default="next-friday -1 weeks -4 days",
+			help="When to gather information from")
+	s.add_argument("--until", default="tomorrow",
+			help="When to stop gathering information")
+	s.add_argument("constraint", nargs="*",
+			help="Any additional JQL contraints")
+	s.set_defaults(func=do_weekly)
+
+	# create the parser for the "monthly" command
+	s = subparsers.add_parser("monthly",
+			help="Generate a (template) monthly report")
+	s.add_argument("--since", default="last month -{} days 00:00:00".format(
+					datetime.date.today().day - 1),
+			help="When to gather information from")
+	s.add_argument("--until", default="-{} days 23:59:59".format(
+					datetime.date.today().day),
+			help="When to stop gathering information")
+	s.add_argument("constraint", nargs="*",
+			help="Any additional JQL contraints")
+	s.add_argument("--fully-automatic", action="store_true")
+	s.set_defaults(func=do_monthly)
+
+	# create the parser for the "passwd" command
+	s = subparsers.add_parser("passwd",
+			help="Store your JIRA password on the keyring")
+	s.set_defaults(func=do_passwd)
+
+	# create the parser for the "piechart" command
+	s = subparsers.add_parser("piechart",
+			help="Generate piecharts for reporting")
+	s.add_argument("--since", default="last month -{} days 00:00:00".format(
+					datetime.date.today().day - 1),
+			help="When to gather information from")
+	s.add_argument("--until", default="-{} days 23:59:59".format(
+					datetime.date.today().day),
+			help="When to stop gathering information")
+	s.add_argument("constraint", nargs="*",
+			help="Any additional JQL contraints")
+	s.set_defaults(func=do_piechart)
+
+	# create the parser for the "worklog" command
+	s = subparsers.add_parser("worklog",
+			help="Summarize worklog entries for analysis")
+	s.add_argument("--since", default="2015-01-01",
+			help="When to gather information from")
+	# worklog does not have any age filtering
+	#s.add_argument("--until", default="tomorrow",
+	#		help="When to stop gathering information")
+	s.add_argument("constraint", nargs="*",
+			help="Any additional JQL contraints")
+	s.set_defaults(func=do_worklog)
+
+	args = parser.parse_args(argv[1:])
+
+	if 'constraint' in args:
+		args.constraint = parse_constraint(args.constraint)
+	if 'since' in args:
+		args.since = date.smart_parse(args.since)
+	if 'until' in args:
+		args.until = date.smart_parse(args.until, end_of_day=True)
+
+	args.func(args)
+
+if __name__ == '__main__':
+	try:
+		sys.exit(main(sys.argv))
+	except KeyboardInterrupt:
+		sys.exit(1)
+	sys.exit(127)
+
