@@ -386,6 +386,17 @@ def do_chart(args):
 	collate_by_component = lambda w: report.issues[w['issue']].get_component()
 	count_effort = lambda w: w['timeSpentSeconds'] / 3600
 
+	# No barchart variant for --count-by-member because the collation is
+	# rather difficult (need to keep all worklogs and count once (and only
+	# once) for worklogs in a time interval. This means neither traversing
+	# by issue nor traversing by worklog can give us the count we want.
+	if args.count_by_member and args.piechart:
+		# Second lambda counts 1 is the card has a worklog, 0 otherwise.
+		data = collect.accumulate(issues,
+				lambda i: i.get_member(),
+				lambda i: int(bool(len(i['worklog']))))
+		chart.piechart(data, args.count_by_member)
+
 	if args.effort_by_engineer and args.barchart:
 		data = collect.accumulate_2d(worklog,
 				collate_by_week, collate_by_engineer, count_effort)
@@ -698,6 +709,7 @@ def main(argv):
 	s.add_argument('--effort-by-component', metavar='PNGFILE')
 	s.add_argument('--effort-by-engineer', metavar='PNGFILE')
 	s.add_argument('--effort-by-member', metavar='PNGFILE')
+	s.add_argument('--count-by-member', metavar='PNGFILE')
 	s.add_argument('--barchart', action='store_true')
 	s.add_argument('--piechart', action='store_true')
 	s.add_argument('--since',
