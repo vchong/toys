@@ -362,8 +362,9 @@ class Report(object):
 		worklog = []
 		for i in issues:
 			for w in i['worklog']:
-				# This does alter the data but the change is additive so
-				# it is harmless if we emit the resulting structures.
+				# This does alter the data but the change is
+				# additive so it is harmless if we emit the
+				# resulting structures.
 				w['issue'] = i['key']
 			worklog += i['worklog']
 
@@ -685,31 +686,35 @@ def main(argv):
 	subparsers = parser.add_subparsers(dest='sub-command')
 	subparsers.required = True      # Can't be set using named arguments (yet)
 
-	s = subparsers.add_parser('chart')
-	s.add_argument("--card-tracker")
-	s.add_argument("--effort-by-component")
-	s.add_argument("--effort-by-engineer")
-	s.add_argument("--effort-by-member")
-	s.add_argument("--barchart", action='store_true')
-	s.add_argument("--piechart", action='store_true')
-	s.add_argument("--since",
-		help="Date from which to chart data (applies to card graphs only)")
-	s.add_argument("--until",
-		help="Only chart data before this date (applies to card graphs only)")
-	s.add_argument("json", nargs='?')
+	s = subparsers.add_parser('chart',
+			help='Draw charts from the data')
+	s.add_argument('--card-tracker', metavar='PNGFILE')
+	s.add_argument('--effort-by-component', metavar='PNGFILE')
+	s.add_argument('--effort-by-engineer', metavar='PNGFILE')
+	s.add_argument('--effort-by-member', metavar='PNGFILE')
+	s.add_argument('--barchart', action='store_true')
+	s.add_argument('--piechart', action='store_true')
+	s.add_argument('--since',
+		help='Date from which to chart data (applies to card graphs only)')
+	s.add_argument('--until',
+		help='Only chart data before this date (applies to card graphs only)')
+	s.add_argument('json', nargs='?')
 	s.set_defaults(func=do_chart)
 
-	s = subparsers.add_parser('count')
-	s.add_argument("--worklog", action='store_true')
-	s.add_argument("json", nargs='?')
+	s = subparsers.add_parser('count',
+			help='Generate summarized statistics')
+	s.add_argument('--worklog', action='store_true')
+	s.add_argument('json', nargs='?')
 	s.set_defaults(func=do_count)
 
-	s = subparsers.add_parser('fetch')
-	s.add_argument("--since", default="2012-01-01",
-                        help="When to gather information from")
+	s = subparsers.add_parser('fetch',
+			help='Download status from projects.linaro.org')
+	s.add_argument('--since', default='2012-01-01',
+                        help='When to gather information from')
 	s.set_defaults(func=do_fetch)
 
-	s = subparsers.add_parser('filter')
+	s = subparsers.add_parser('filter',
+			help='Filter cards and worklogs')
 	s.add_argument('--assignee')
 	s.add_argument('--component')
 	s.add_argument('--since')
@@ -718,46 +723,51 @@ def main(argv):
 	s.add_argument('--no-worklog', action='store_true')
 	s.add_argument('--worklog-since')
 	s.add_argument('--worklog-until')
-	s.add_argument("json", nargs='?')
+	s.add_argument('json', nargs='?')
 	s.set_defaults(func=do_filter)
 
-	s = subparsers.add_parser("format")
-	s.add_argument("--template",
-			default="{key}: {summary} ({member})")
-	s.add_argument("json", nargs='?')
+	s = subparsers.add_parser('format',
+			help='Summarize each card using a template')
+	s.add_argument('--template',
+			default='{key}: {summary} ({member})')
+	s.add_argument('json', nargs='?')
 	s.set_defaults(func=do_format)
 
-	s = subparsers.add_parser('interact')
-	s.add_argument("json")
+	s = subparsers.add_parser('interact',
+			help='Interact with report data via REPL')
+	s.add_argument('json')
 	s.set_defaults(func=do_interact)
 
-	s = subparsers.add_parser("monthly",
-			help="Generate a (template) monthly report")
-	s.add_argument("json", nargs='?')
+	s = subparsers.add_parser('monthly',
+			help='Generate a (template) monthly report')
+	s.add_argument('json', nargs='?')
 	s.set_defaults(func=do_monthly)
 
-	s = subparsers.add_parser("summary")
-	s.add_argument("--template",
-			default="{created-10}: {key}: {summary} ({member})")
-	s.add_argument("json", nargs='?')
+	s = subparsers.add_parser('summary',
+			help='Generate a quick summary')
+	s.add_argument('--template',
+			default='{created-10}: {key}: {summary} ({member})')
+	s.add_argument('json', nargs='?')
 	s.set_defaults(func=do_format)
 
-	s = subparsers.add_parser('passwd')
+	s = subparsers.add_parser('passwd',
+			help='Store your JIRA password to the keyring')
 	s.set_defaults(func=do_passwd)
 
-	s = subparsers.add_parser("weekly",
-			help="Generate a (template) weekly report")
-	s.add_argument("json", nargs='?')
+	s = subparsers.add_parser('weekly',
+			help='Generate a (template) weekly report')
+	s.add_argument('json', nargs='?')
 	s.set_defaults(func=do_weekly)
 
-	s = subparsers.add_parser('worklog')
-	s.add_argument("json", nargs='?')
+	s = subparsers.add_parser('worklog',
+			help='Summarize each worklog entry')
+	s.add_argument('json', nargs='?')
 	s.set_defaults(func=do_worklog)
 
 	args = parser.parse_args(argv[1:])
 	args.func(args)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
         try:
                 sys.exit(main(sys.argv))
         except KeyboardInterrupt:
