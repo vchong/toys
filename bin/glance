@@ -394,6 +394,12 @@ def do_chart(args):
 				xlabel = 'Year and week number',
 				ylabel = 'Effort (man/hours)')
 
+	if args.effort_by_engineer and args.piechart:
+		data = collect.accumulate(worklog, collate_by_engineer,
+				count_effort)
+		chart.piechart(data, args.effort_by_engineer)
+
+
 	if args.effort_by_member and args.barchart:
 		data = collect.accumulate_2d(worklog,
 				collate_by_month, collate_by_member, count_effort)
