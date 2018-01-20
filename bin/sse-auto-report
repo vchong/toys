@@ -71,9 +71,6 @@ glance chart --card-tracker fig-1.1-card_tracker.png \
 	--since "$full_year_since" --until "$until" tmp/jira-activity.json
 printf "."
 
-# TODO: fig-1.2-cards_per_member.png
-# TODO: fig-1.3-cards_per_member-full_year.png
-
 glance filter tmp/jira-activity.json \
 	--worklog-since "$full_year_since" --worklog-until "$until" --no-worklog | \
 glance chart \
@@ -86,6 +83,7 @@ glance filter tmp/jira-activity.json \
 	--worklog-since "$since" --worklog-until "$until" --no-worklog | \
 glance chart \
 	--piechart \
+	--count-by-member fig-1.2-cards_per_member.png \
 	--effort-by-member fig-1.5-effort_per_member.png \
 	--effort-by-component fig-1.8-effort_by_category.png
 printf "."
@@ -94,6 +92,7 @@ glance filter tmp/jira-activity.json \
 	--worklog-since "$full_year_since" --worklog-until "$until" --no-worklog | \
 glance chart \
 	--piechart \
+	--count-by-member fig-1.3-cards_per_member-full_year.png \
 	--effort-by-member fig-1.6-effort_per_member-full_year.png \
 	--effort-by-component fig-1.9-effort_by_category-full_year.png
 printf "."
