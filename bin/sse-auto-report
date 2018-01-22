@@ -169,12 +169,17 @@ printf " done\n"
 96btool dump | 96btool filter --since "$double_year_since" \
 			      --until "$until" > tmp/96boards-all.json
 
-for i in danielt ldts ldts-atsuka leo-yan Loic vchong
+for i in danielt leo-yan Loic vchong
 do
 	printf "Grabbing 96Boards data for $i ..."
 	cat tmp/96boards-all.json | 96btool filter --user $i > tmp/96b-$i.json
 	printf " %d posts\n" `cat tmp/96b-$i.json | 96btool filter --since "$since" --until "$until" | 96btool count`
 done
+
+96btool filter --user ldts-atsuka --until "2017-01-01" \
+	tmp/96boards-all.json > tmp/96b-ldts-atsuka.json
+96btool filter --user ldts --until "2017-08-01" \
+	tmp/96boards-all.json > tmp/96b-ldts.json
 
 printf "Generating 96boards activity report ..."
 cat tmp/96b-*.json | 96btool merge > tmp/96boards.json
