@@ -126,20 +126,24 @@ class Issue(dict):
 			keys = set([ i['key'] for i in issues ])
 
 			for issue in list(issues):
-				for link in issue['fields']['issuelinks']:
-					if 'outwardIssue' in link:
-						rel = link['outwardIssue']
-					else:
-						rel = link['inwardIssue']
-					if rel['key'] not in keys:
-						j = jira.issue(rel['key'])
-						new_issues.append(Issue.wrap(jira, j))
-						keys.add(rel['key'])
+				if issue['key'].startswith('PSE'):
+					for link in issue['fields']['issuelinks']:
+						if 'outwardIssue' in link:
+							rel = link['outwardIssue']
+						else:
+							rel = link['inwardIssue']
+						if rel['key'] not in keys:
+							j = jira.issue(rel['key'])
+							new_issues.append(Issue.wrap(jira, j))
+							keys.add(rel['key'])
 				if 'parent' in issue:
-					if issue['parent'] not in keys:
-						j = jira.issue(issue['parent'])
-						new_issues.append(Issue.wrap(jira, j))
-						keys.add(issue['parent'])
+					if issue['parent'] and issue['parent'] not in keys:
+						try:
+							j = jira.issue(issue['parent'])
+							new_issues.append(Issue.wrap(jira, j))
+							keys.add(issue['parent'])
+						except:
+							warn(issue, "cannot fetch parent '{}'".format(issue['parent']))
 
 		return issues
 
