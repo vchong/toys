@@ -104,13 +104,14 @@ class Issue(dict):
 		return self
 
 	@staticmethod
-	def fetch(since, constraint=''):
+	def fetch(since, constraint=None):
 		cfg = config.get_config()
 		password = config.get_password(cfg, 'jira')
 
 		query = 'project = "Premium Services Engineering"'
 		query += ' AND (statusCategory != Done OR updatedDate >= "{}")'.format(since.strftime("%Y/%m/%d %H:%M"))
-		query += constraint
+		if constraint:
+			query += 'AND ({})'.format(constraint)
 
 		jira = JIRA(options={'server': cfg['jira']['server']},
 			basic_auth=(cfg['jira']['username'], password))
@@ -494,7 +495,17 @@ def do_count(args):
 
 def do_fetch(args):
 	since = date.smart_parse(args.since)
-	issues = sorted(Issue.fetch(since), key=lambda i: i['key'])
+
+	if args.constraint:
+		# Substitute @ symbols if the arguments looks like it might be an
+		# e-mail address (by containing a .)
+		constraint = [ x.replace('@', '\\u0040') if '.' in x else x
+					for x in args.constraint ]
+		constraint = ' '.join(constraint)
+	else:
+		constraint = None
+
+	issues = sorted(Issue.fetch(since, constraint), key=lambda i: i['key'])
 	json.dump(issues, sys.stdout)
 
 def do_filter(args):
@@ -733,6 +744,8 @@ def main(argv):
 			help='Download status from projects.linaro.org')
 	s.add_argument('--since', default='2012-01-01',
                         help='When to gather information from')
+	s.add_argument("constraint", nargs="*",
+			help="Any additional JQL contraints")
 	s.set_defaults(func=do_fetch)
 
 	s = subparsers.add_parser('filter',
