@@ -627,15 +627,14 @@ def do_weekly(args):
 		textwrap.TextWrapper(initial_indent='   - ', subsequent_indent='     ')
 	)
 
-	def wrap(msg, level=1):
+	def wrap(msg, level):
 		print('\n'.join(wrappers[level].wrap(msg)))
 
-	wrap("96Boards forum activity", level=1)
+	posts = Post.load(args.json)
 
-	summary = collections.defaultdict(int)
-	for p in Post.load(args.json):
-		summary[p['topic']['title']] += 1
+	wrap('96Boards forum activity ({} posts)'.format(len(posts)), level=1)
 
+	summary = collect.accumulate(posts, lambda p: p['topic']['title'])
 	for s in sorted(summary.keys()):
 		if summary[s] == 1:
 			wrap(s, level=2)
