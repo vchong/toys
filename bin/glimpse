@@ -335,7 +335,7 @@ def parse_constraint(args):
 	return constraint.replace('@', '\\u0040')
 
 def do_weekly(args):
-	query = 'project = "Premium Services Engineering"'
+	query = 'project = "Support and Solutions Engineering"'
 	query += ' AND (statusCategory != Complete OR updatedDate >= "{}")'.format(
 			args.since.strftime("%Y/%m/%d %H:%M"))
 	query += args.constraint

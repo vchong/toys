@@ -108,7 +108,7 @@ class Issue(dict):
 		cfg = config.get_config()
 		password = config.get_password(cfg, 'jira')
 
-		query = 'project = "Premium Services Engineering"'
+		query = 'project = "Support and Solutions Engineering"'
 		query += ' AND (statusCategory != Done OR updatedDate >= "{}")'.format(since.strftime("%Y/%m/%d %H:%M"))
 		if constraint:
 			query += 'AND ({})'.format(constraint)
