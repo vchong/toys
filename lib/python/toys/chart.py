@@ -5,6 +5,8 @@ Works best with data sets prepared using toys.collect
 '''
 
 import hashlib
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import toys.collect as collect
@@ -66,8 +68,14 @@ def stacked_barchart(things, filename, title=None, xlabel=None, ylabel=None):
 	plt.close()
 
 def piechart(things, filename, title=None):
-	labels = sorted(things.keys())
-	counts = [ things[l] for l in labels ]
+	labels = None
+	if isinstance(things, dict):
+		labels = sorted(things.keys())
+		counts = [ things[l] for l in labels ]
+	else:
+		labels = [ t[0] for t in things ]
+		counts = [ t[1] for t in things ]
+
 	colours = [ get_colour(l) for l in labels ]
 
 	wedges, texts = plt.pie(counts, colors=colours, startangle=90)

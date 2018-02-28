@@ -509,16 +509,19 @@ def do_passwd(args):
 def do_piechart(args):
 	'''Visualise data as a pie chart'''
 	count = load_json(args.json)
+
+	# Assume the incoming JSON is created by 96btool count
 	try:
-		# Assume the incoming JSON is a dictionary created by
-		# 96btool count
 		chart.piechart(count, args.output, args.title)
-	except AttributeError:
-		# Hmnn... guess this is just a list of posts then...
-		posts = [ Post(p) for p in count ]
-		count = collect.accumulate(posts,
-				lambda p: p['topic']['category'])
-		chart.piechart(count, args.output, args.title)
+		return
+	except KeyError:
+		pass
+
+	# Hmnn... guess this is just a list of posts then...
+	posts = [ Post(p) for p in count ]
+	count = collect.accumulate(posts,
+			lambda p: p['topic']['category'])
+	chart.piechart(count, args.output, args.title)
 
 def do_pull(args):
 	'''Update the local cache of the database'''
