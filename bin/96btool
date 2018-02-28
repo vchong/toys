@@ -679,6 +679,21 @@ def do_tag(args):
 
 	json.dump(posts, sys.stdout, indent=2)
 
+def do_usermap(args):
+	'''Generate a usermap'''
+	if not args.json:
+		lines = sys.stdin.readlines()
+	else:
+		with open(args.json, 'r') as f:
+			lines = f.readlines()
+
+	usermap = {}
+	for ln in lines:
+		fields = ln.strip().split()
+		usermap[fields[0]] = fields[1]
+
+	json.dump(usermap, sys.stdout, indent=2)
+
 def do_weekly(args):
 	'''Generate a detailed weekly activity report'''
 	wrappers = (
@@ -844,6 +859,8 @@ def main(argv):
 	s.add_argument('--usermap', help='Tag post using a lookup table')
 	s.add_argument('json', nargs='?',
 			help='Read data from this file')
+
+	s = new_parser(do_usermap)
 
 	s = new_parser(do_weekly)
 	s.add_argument('json', nargs='?',
