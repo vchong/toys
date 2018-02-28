@@ -246,13 +246,19 @@ def do_chart(args):
 	'''Visualise the post data as a stacked bar chart'''
 	posts = Post.load(args.json)
 
-	by_month_by_category = collect.accumulate_2d(posts,
-                lambda p: iso8601.parse_date(p['created_at']).strftime('%Y-%m'),
-		lambda p: p['topic']['category'])
+	title = args.title if args.title else 'Posts by month and category'
 
-	chart.stacked_barchart(by_month_by_category, args.output,
-			title = 'Posts by month and category',
-			ylabel = 'Number of posts')
+	if args.by_tag:
+		by_month_by_xxx = collect.accumulate_2d(posts,
+			lambda p: iso8601.parse_date(p['created_at']).strftime('%Y-%m'),
+			lambda p: ','.join(p['tags']))
+	else:
+		by_month_by_xxx = collect.accumulate_2d(posts,
+			lambda p: iso8601.parse_date(p['created_at']).strftime('%Y-%m'),
+			lambda p: p['topic']['category'])
+
+	chart.stacked_barchart(by_month_by_xxx, args.output,
+			title = title, ylabel = 'Number of posts')
 
 def do_count(args):
 	'''Count posts, potential organising them into categories first'''
@@ -731,7 +737,11 @@ def main(argv):
 		return s
 
 	s = new_parser(do_chart)
+	s.add_argument('--by-tag', action='store_true',
+			help='Use tags to collate posts')
 	s.add_argument("--output", default="96btool.png")
+	s.add_argument("--title",
+			help='Title for the graph')
 
 	s = new_parser(do_count)
 	s.add_argument('--csv', action='store_true',
