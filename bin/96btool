@@ -335,14 +335,13 @@ def do_filter(args):
 	posts = [ p for p in posts if iso8601.parse_date(p['created_at']) >= since ]
 	posts = [ p for p in posts if iso8601.parse_date(p['created_at']) < until ]
 
+	if args.tag:
+		posts = [ p for p in posts if 'tags' in p and args.tag in p['tags'] ]
+
 	if args.user:
 		users = args.user.split(',')
-		posts_by_id = {}
-		for user in users:
-			for p in posts:
-				if p['username'] == user:
-					posts_by_id[p['id']] = p
-		posts = [ posts_by_id[k] for k in sorted(posts_by_id.keys()) ]
+		posts = [ p for p in posts if p['username'] in users ]
+
 
 	if args.first_post:
 		# Opps. We stripped out the post stream so this test ends up more
@@ -619,6 +618,44 @@ def do_refresh(args):
 		with open(args.db, 'w') as f:
 			json.dump(posts, f, sort_keys=True, indent=2)
 
+def do_tag(args):
+	'''Tag posts that match certain criteria'''
+	posts = Post.load(args.json)
+
+	tag_with = args.tag_with if args.tag_with else 'Marked'
+
+	if args.user:
+		users = args.user.split(',')
+	else:
+		users = []
+
+	if args.usermap:
+		(usermap, needle) = args.usermap.split(',', maxsplit=1)
+		with open(usermap, 'r') as f:
+			usermap = json.load(f)
+
+	def tag(p):
+		if args.unique:
+			p['tags'] = [ tag_with, ]
+		elif tag_with not in p['tags']:
+			p['tags'].append(tag_with)
+
+	for p in posts:
+		if 'tags' not in p:
+			p['tags'] = []
+
+		if p['username'] in users:
+			tag(p)
+
+		if args.usermap and p['username'] in usermap and \
+				needle in usermap[p['username']]:
+			tag(p)
+
+		if args.empty and len(p['tags']) == 0:
+			tag(p)
+
+	json.dump(posts, sys.stdout, indent=2)
+
 def do_weekly(args):
 	'''Generate a detailed weekly activity report'''
 	wrappers = (
@@ -719,6 +756,8 @@ def main(argv):
 			help="Search for a string within a post")
 	s.add_argument("--since", default="2012-01-01",
 			help="When to gather information from")
+	s.add_argument('--tag',
+			help='Filter by tag (exact match needed)')
 	s.add_argument("--until", default="tomorrow",
 			help="When to stop gathering .information")
 	s.add_argument("--user", help="Select only posts by this user")
@@ -762,6 +801,18 @@ def main(argv):
 	s = subparsers.add_parser('summary', help=do_format.__doc__)
 	s.set_defaults(func=do_format,
 		       template="{shortdate}: {topic-title} ({username})")
+	s.add_argument('json', nargs='?',
+			help='Read data from this file')
+
+	s = new_parser(do_tag)
+	s.add_argument('--empty', action='store_true',
+			help='Tag posts with no tags')
+	s.add_argument('--tag-with',
+			help="Tag to apply, defaults to 'Marked'")
+	s.add_argument('--unique', action='store_true',
+			help='Remove existing tags before tagging')
+	s.add_argument('--user', help='Tag only posts by this user')
+	s.add_argument('--usermap', help='Tag post using a lookup table')
 	s.add_argument('json', nargs='?',
 			help='Read data from this file')
 
