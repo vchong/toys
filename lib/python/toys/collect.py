@@ -24,6 +24,17 @@ def collate(things, sieve):
 		results[sieve(t)].append(t)
 	return results
 
+def simplify(things, threshold=0.005):
+	total = sum(things.values())
+	remaining = 0
+
+	for k in tuple(things.keys()):
+		if things[k] / total < threshold:
+			remaining += things[k]
+			del things[k]
+
+	return remaining
+
 def accumulate_2d(things, primary_sieve, secondary_sieve, count=lambda t: 1):
 	'''Collate the things in two different dimensions, then count them'''
 	data = collate(things, primary_sieve)

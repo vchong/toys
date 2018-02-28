@@ -275,11 +275,17 @@ def do_count(args):
 			del count[None]
 
 	if count:
+		if args.simplify:
+			remaining = collect.simplify(count)
+
 		flat_count = [ (k, v) for k, v in count.items() ]
 		if args.rank:
 			flat_count = sorted(flat_count, key=lambda x: x[1], reverse=True)
 		else:
 			flat_count = sorted(flat_count, key=lambda x: x[0])
+
+		if args.simplify:
+			flat_count.append(('Other', remaining))
 
 		if args.csv:
 			for k, v in flat_count:
@@ -746,6 +752,8 @@ def main(argv):
 	s = new_parser(do_count)
 	s.add_argument('--csv', action='store_true',
 		       help="Show the count data as CSV")
+	s.add_argument('--simplify', action='store_true',
+			help="Combine values less than 1 percent")
 	s.add_argument('--by-category', action='store_true',
 			help="Count posts in each category")
 	s.add_argument('--by-user', action='store_true',
