@@ -362,8 +362,16 @@ def do_filter(args):
 		posts = [ p for p in posts if is_first_post(p) ]
 
 	if args.category:
-		posts = [ p for p in posts if args.category.lower() in
-				p['topic']['category'].lower() ]
+		categories = args.category.lower().split(',')
+		def matched(p):
+			category = p['topic']['category'].lower()
+			for c in categories:
+				if c in category:
+					return True
+
+			return False
+
+		posts = [ p for p in posts if matched(p) ]
 
 	if args.grep:
 		e = re.compile(args.grep)
