@@ -440,7 +440,7 @@ def do_chart(args):
 
 	if args.card_tracker:
 		since = date.smart_parse(args.since)
-		until = date.smart_parse(args.until)
+		until = date.smart_parse(args.until, end_of_day=True)
 
 		all_cards = report.issues.values()
 		closed_cards = [ c for c in all_cards if c.date('resolutiondate') ]
@@ -538,7 +538,7 @@ def do_filter(args):
 					iso8601.parse_date(w['started']) >= since ]
 
 	if args.worklog_until:
-		until = date.smart_parse(args.worklog_until)
+		until = date.smart_parse(args.worklog_until, end_of_day=True)
 		for i in issues:
 			i['worklog'] = [ w for w in i['worklog'] if
 					iso8601.parse_date(w['started']) <= until ]
