@@ -46,7 +46,11 @@ except:
 	interact = pdb.set_trace
 
 # To keep this up-to-date try:
-#   filter --grep "About the.*category"
+#
+#   96btool dump \
+#   | 96btool filter --grep "About the.*category" \
+#   | 96btool format --template '{topic-category_id}: {topic-title}'
+#
 category_lookup = {
 	1: 'Uncategorized',
 	4: 'Staff',
@@ -67,6 +71,11 @@ category_lookup = {
         22: 'Nitrogen',
         23: 'OrangePi i96',
         24: 'iMX7-96',
+        25: 'Rock960',
+        28: '96Boards.ai',
+        29: 'Ultra96',
+        31: 'Developerbox',
+        32: 'Hikey 970',
 }
 
 def load_json(obj):
