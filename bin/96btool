@@ -275,19 +275,53 @@ def do_count(args):
 	count = None
 
 	if args.by_category:
-		count = collect.accumulate(posts,
-				lambda x: x['topic']['category'])
-
+		sieve = lambda p: p['topic']['category']
+	if args.by_tag:
+		sieve = lambda p: ','.join(p['tags'])
 	if args.by_user:
-		count = collect.accumulate(posts, lambda x: x['username'])
+		sieve = lambda p: p['username']
+
+	if sieve and args.table:
+		count = collect.accumulate_2d(posts,
+				lambda p: iso8601.parse_date(p['created_at']).strftime('%Y-%m'),
+				sieve)
+
+		if args.html:
+			headings = set()
+			for v in count.values():
+				for k in v.keys():
+					headings.add(k)
+			headings = sorted(headings)
+
+			print('<table border=2>')
+
+			print('<tr>')
+			print('<th></th>')
+			for h in headings:
+				print('<th>{}</th>'.format(h))
+			print('<th>Total</th>')
+			print('</tr>')
+
+			for k, v in sorted(count.items()):
+				print('<tr>')
+				print('<td>{}</td>'.format(k))
+				for h in headings:
+					print('<td>{}</td>'.format(v[h]))
+				print('<td>{}</th>'.format(sum(v.values())))
+				print('</tr>')
+
+			print('</table>\n')
+		else:
+			json.dump(count, sys.stdout, sort_keys=True, indent=2)
+	elif sieve:
+		count = collect.accumulate(posts, sieve)
 		if None in count:
 			del count[None]
 
-	if count:
 		if args.simplify:
 			remaining = collect.simplify(count)
 
-		flat_count = [ (k, v) for k, v in count.items() ]
+		flat_count = list(count.items())
 		if args.rank:
 			flat_count = sorted(flat_count, key=lambda x: x[1], reverse=True)
 		else:
@@ -783,10 +817,16 @@ def main(argv):
 			help="Combine values less than 1 percent")
 	s.add_argument('--by-category', action='store_true',
 			help="Count posts in each category")
+	s.add_argument('--by-tag', action='store_true',
+			help='Count posts based on tags')
 	s.add_argument('--by-user', action='store_true',
 			help="Count posts by each user")
+	s.add_argument('--html', action='store_true',
+			help="Generate results as HTML")
 	s.add_argument('--rank', action='store_true',
 			help="Sort the data into reverse numeric order")
+	s.add_argument('--table', action='store_true',
+			help="Tabulate data by month")
 	s.add_argument('--text', action='store_true',
 			help="Show results in plain text")
 
