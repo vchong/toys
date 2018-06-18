@@ -76,6 +76,7 @@ category_lookup = {
         29: 'Ultra96',
         31: 'Developerbox',
         32: 'Hikey 970',
+        33: 'BPi-NBIoT',
 }
 
 def load_json(obj):
