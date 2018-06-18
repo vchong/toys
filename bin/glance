@@ -702,20 +702,40 @@ def do_worklog(args):
 	report = Report(issues)
 
 	# Sort by time order (glimpse used to sort by issue number here)
-	for w in report.worklog():
-		card = report.issues[w['issue']]
-		if 'parent' in card:
-			if card['parent'] in report.issues:
-				epic = report.issues[card['parent']]
-			else:
-				epic = card
+	for w in report.worklog(recurse=True):
+		w['card'] = report.issues[w['issue']]
+		if 'parent' in w['card'] and card['parent'] in report.issues:
+			w['epic'] = report.issues[card['parent']]
 		else:
-			epic = card
-		print('"{}","{}","{}","{}","{}","{}","{}","{}"'.format(
-			card['key'], card['summary'], epic['key'],
-			card.get_member(), card.get_component(),
-			w['started'], w['timeSpentSeconds'],
-			w['author']['displayName']))
+			w['epic'] = w['card']
+
+		ln = args.template
+		for m in re.finditer('{([^}:]+)([^}]*)}', args.template):
+			field = m.group(1)
+			fmt = m.group(2)
+
+			try:
+				if 'card-member' == field:
+					val = w['card'].get_member()
+				elif 'card-component' == field:
+					val = w['card'].get_component()
+				elif 'progress' == field or 'plans' == field:
+					val = '\n'
+					for bullet in w.parse()['plans' == field]:
+						val += '* {}\n'.format(bullet)
+				elif '-' in field:
+					(field, attr) = field.split('-', 1)
+					if isinstance(w[field], str):
+						val = w[field][0:int(attr)]
+					else:
+						val = w[field][attr]
+				else:
+					val = w[field]
+			except KeyError:
+				continue
+
+			ln = ln.replace(m.group(0), '{{{}}}'.format(fmt).format(val))
+		print(ln)
 
 def main(argv):
 	parser = argparse.ArgumentParser()
@@ -800,6 +820,17 @@ def main(argv):
 
 	s = subparsers.add_parser('worklog',
 			help='Summarize each worklog entry')
+	s.add_argument('--csv', dest='template',
+			help="Format summary as CSV (for spreadsheet import)",
+			default=argparse.SUPPRESS, action='store_const',
+			const='"{card-key}","{card-summary}","{epic-key}","{card-member}","{card-component}","{started}","{timeSpentSeconds}","{author-displayName}"')
+	s.add_argument('--progress', dest='template',
+			help="Show the progress report for each worklog",
+			default=argparse.SUPPRESS, action='store_const',
+			const='{card-key}: {card-summary} ({author-displayName})\n{progress}')
+	s.add_argument('--template',
+			help="Format the worklog using a custom template",
+			default='{card-key}: {card-summary} ({author-displayName}, {timeSpent})')
 	s.add_argument('json', nargs='?')
 	s.set_defaults(func=do_worklog)
 
