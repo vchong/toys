@@ -589,7 +589,11 @@ def do_format(args):
 def do_interact(args):
 	'''Directly interaction with the JSON data'''
 	issues = Issue.load(args.json)
+	report = Report(issues)
+	worklog = report.worklog()
+
 	issue = issues[-1]
+	work = worklog[-1]
 
 	interact()
 
