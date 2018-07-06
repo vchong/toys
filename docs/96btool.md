@@ -26,7 +26,7 @@ For anything more than quick queries we need to build a local cache.
 Fetching the initial data from scratch is possible but it takes *ages*.
 Instead it is recommended that you pre-populate the cache:
 
-    curl https://people.linaro.org/~daniel.thompson/96btool-20170907.db.xz | \
+    curl https://people.linaro.org/~daniel.thompson/96btool-20170706.db.xz | \
         unxz -c > $TOYSROOT/96btool.db
 
 Having done that the initial pull will be much quicker although it will
