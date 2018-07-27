@@ -326,6 +326,7 @@ def do_count(args):
 		flat_count = list(count.items())
 		if args.rank:
 			flat_count = sorted(flat_count, key=lambda x: x[1], reverse=True)
+			ranked_count = collect.rank(flat_count)
 		else:
 			flat_count = sorted(flat_count, key=lambda x: x[0])
 
@@ -336,8 +337,12 @@ def do_count(args):
 			for k, v in flat_count:
 				print('"{}",{}'.format(k, v))
 		elif args.text:
-			for k, v in flat_count:
-				print('{:30} {}'.format(k, v))
+			if args.rank:
+				for r, k, v in ranked_count:
+					print('{:2}.  {:30} {}'.format(r, k, v))
+			else:
+				for k, v in flat_count:
+					print('{:30} {}'.format(r, k, v))
 		else:
 			if args.rank:
 				count = flat_count

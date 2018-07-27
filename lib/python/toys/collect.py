@@ -24,6 +24,18 @@ def collate(things, sieve):
 		results[sieve(t)].append(t)
 	return results
 
+def rank(things):
+	'''Take a sorted (k, v) sequence and add a rank to each element (r, k, v).'''
+	results = []
+	rank = 1
+	prev_v = None
+	for c, (k, v) in enumerate(things, 1):
+		if v != prev_v:
+			prev_v = v
+			rank = c
+		results.append((rank, k, v))
+	return results
+
 def simplify(things, threshold=0.005):
 	total = sum(things.values())
 	remaining = 0
