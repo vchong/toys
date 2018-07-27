@@ -704,8 +704,8 @@ def do_worklog(args):
 	# Sort by time order (glimpse used to sort by issue number here)
 	for w in report.worklog(recurse=True):
 		w['card'] = report.issues[w['issue']]
-		if 'parent' in w['card'] and card['parent'] in report.issues:
-			w['epic'] = report.issues[card['parent']]
+		if 'parent' in w['card'] and w['card']['parent'] in report.issues:
+			w['epic'] = report.issues[w['card']['parent']]
 		else:
 			w['epic'] = w['card']
 
