@@ -844,7 +844,7 @@ def main(argv):
 			const='{card-key}: {card-summary} ({author-displayName})\n{progress}')
 	s.add_argument('--template',
 			help="Format the worklog using a custom template",
-			default='{card-key}: {card-summary} ({author-displayName}, {timeSpent})')
+                        default='{started-10}: {card-key}: {card-summary} ({author-displayName}, {timeSpent})')
 	s.add_argument('json', nargs='?')
 	s.set_defaults(func=do_worklog)
 
