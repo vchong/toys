@@ -734,10 +734,11 @@ def do_tag(args):
 
 def do_usermap(args):
 	'''Generate a usermap'''
-	if not args.json:
+
+	if not args.text:
 		lines = sys.stdin.readlines()
 	else:
-		with open(args.json, 'r') as f:
+		with open(args.text, 'r') as f:
 			lines = f.readlines()
 
 	usermap = {}
@@ -921,7 +922,8 @@ def main(argv):
 	s.add_argument('json', nargs='?',
 			help='Read data from this file')
 
-	s = new_parser(do_usermap)
+	s = new_parser(do_usermap, no_json_arg=True)
+	s.add_argument('text', nargs='?', help='Read data from this file')
 
 	s = new_parser(do_weekly)
 	s.add_argument('json', nargs='?',
