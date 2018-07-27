@@ -514,15 +514,22 @@ def do_filter(args):
 	for i in issues:
 		by_key[i['key']] = i
 
-	def filter_by(person, issue, needle):
-		field = issue['fields'][person]
-		if not field:
+	def filter_by(user, needles):
+		for needle in needles:
+			if needle in user['displayName'] or needle in user['emailAddress']:
+				return True
+		return False
+
+	def filter_by_field(field, issue, needles):
+		f = issue['fields'][field]
+		if not f:
 			return False
 
-		return needle in field['displayName'] or needle in field['emailAddress']
+		return filter_by(f, needles)
 
 	if args.assignee:
-		issues = [ i for i in issues if filter_by('assignee', i, args.assignee) ]
+		issues = [ i for i in issues if
+				filter_by_field('assignee', i, args.assignee.split(',')) ]
 
 	if args.component:
 		issues = [ i for i in issues if i.has_component(args.component, args.strict) ]
@@ -542,6 +549,11 @@ def do_filter(args):
 		for i in issues:
 			i['worklog'] = [ w for w in i['worklog'] if
 					iso8601.parse_date(w['started']) <= until ]
+
+	if args.worklog_by:
+		for i in issues:
+			i['worklog'] = [ w for w in i['worklog'] if
+					filter_by(w['author'], args.worklog_by.split(',')) ]
 
 	if args.no_worklog:
 		issues = [ i for i in issues if i['worklog'] ]
@@ -780,6 +792,8 @@ def main(argv):
 	s.add_argument('--strict', action='store_true')
 	s.add_argument('--no-keep-parent', action='store_true')
 	s.add_argument('--no-worklog', action='store_true')
+	s.add_argument('--worklog-by',
+		       help="Select only worklogs by this user")
 	s.add_argument('--worklog-since')
 	s.add_argument('--worklog-until')
 	s.add_argument('json', nargs='?')
