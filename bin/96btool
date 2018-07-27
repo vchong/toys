@@ -268,6 +268,9 @@ def do_chart(args):
 			lambda p: iso8601.parse_date(p['created_at']).strftime('%Y-%m'),
 			lambda p: p['topic']['category'])
 
+	if args.simplify:
+		collect.simplify_2d(by_month_by_xxx, args.simplify / 100, unconditional=('Uncategorized'))
+
 	chart.stacked_barchart(by_month_by_xxx, args.output,
 			title = title, ylabel = 'Number of posts')
 
@@ -814,6 +817,8 @@ def main(argv):
 	s.add_argument('--by-tag', action='store_true',
 			help='Use tags to collate posts')
 	s.add_argument("--output", default="96btool.png")
+	s.add_argument('--simplify', type=float,
+			help="Combine values less than N percent")
 	s.add_argument("--title",
 			help='Title for the graph')
 

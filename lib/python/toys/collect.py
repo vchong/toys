@@ -53,3 +53,40 @@ def accumulate_2d(things, primary_sieve, secondary_sieve, count=lambda t: 1):
 	for k in data.keys():
 		data[k] = accumulate(data[k], secondary_sieve, count)
 	return data
+
+def simplify_2d(things, threshold=0.03, category='Other', unconditional=()):
+	'''Merge small values into a special category.
+
+	Expected a dictionary of dictionaries of numbers [output of accumulate_2d()].
+	'''
+
+	# Find the largest primary category and create a list of every possible
+	# secondary key
+	max_sum = 0
+	keys = set()
+	for secondary in things.values():
+		total = sum(secondary.values())
+		if total > max_sum:
+			max_sum = total
+		keys |= set(secondary.keys())
+
+	# Recalculate the threshold (as a fraction of the largest primary category)
+	threshold = threshold * max_sum
+
+	# Work through each secondary and remove keys that exceed the threshold
+	# from the cull list
+	keys_to_cull = keys
+	for secondary in things.values():
+		for k, v in secondary.items():
+			if v >= threshold:
+				keys_to_cull.discard(k)
+	keys_to_cull |= set(unconditional)
+
+	# Work through each secondary simplifying each one
+	for secondary in things.values():
+		for k in tuple(secondary.keys()):
+			if k in keys_to_cull:
+				if category not in secondary:
+					secondary[category] = 0
+				secondary[category] += secondary[k]
+				del secondary[k]
