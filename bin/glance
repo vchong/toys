@@ -810,6 +810,15 @@ def do_interact_cmd(args):
 
 	interact()
 
+def do_spy_cmd(args):
+	issues = do_fetch(since=args.since)
+	do_filter(issues, worklog_since=args.since, worklog_by=args.on, no_worklog=True)
+	if args.by_epic:
+		do_chart(issues, effort_by_epic=args.output)
+	else:
+		do_chart(issues, effort_by_engineer=args.output)
+
+
 #
 # main - argument parsing and dispatch to sub-commands
 #
@@ -882,6 +891,18 @@ def main(argv):
 			help='Generate a (template) monthly report')
 	s.add_argument('json', nargs='?')
 	s.set_defaults(func=do_monthly)
+
+	s = subparsers.add_parser('spy',
+			help='Visualize a users worklog')
+	s.add_argument('--by-epic', action='store_true',
+			help='Summarize by epic (rather than by engineer)')
+	s.add_argument('--since', required=True,
+                        help='When to gather information from')
+	s.add_argument('--on', required=True,
+			help='User(s) to spy on')
+	s.add_argument('--output', required=True,
+			help='Filename to put the graph in')
+	s.set_defaults(func=do_spy_cmd)
 
 	s = subparsers.add_parser('summary',
 			help='Generate a quick summary')
