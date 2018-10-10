@@ -634,17 +634,6 @@ def do_format(args):
 			ln = ln.replace(m.group(0), '{{{}}}'.format(fmt).format(val))
 		print(ln)
 
-def do_interact(args):
-	'''Directly interaction with the JSON data'''
-	issues = Issue.load(args.json)
-	report = Report(issues)
-	worklog = report.worklog()
-
-	issue = issues[-1]
-	work = worklog[-1]
-
-	interact()
-
 def do_monthly(args):
 	issues = Issue.load(args.json)
 	report = Report(issues)
@@ -804,6 +793,23 @@ def do_filter_cmd(args):
 	do_filter(issues, **vars(args))
 	json.dump(issues, sys.stdout)
 
+def do_interact_cmd(args):
+	'''Directly interaction with the JSON data'''
+	if args.json:
+		issues = Issue.load(args.json)
+	else:
+		print('Fetching data ...', end='', flush=True)
+		issues = do_fetch(since='last year')
+		print(' done')
+	report = Report(issues)
+	worklog = report.worklog()
+
+	issue = issues[-1]
+	work = worklog[-1]
+	w = work
+
+	interact()
+
 #
 # main - argument parsing and dispatch to sub-commands
 #
@@ -869,8 +875,8 @@ def main(argv):
 
 	s = subparsers.add_parser('interact',
 			help='Interact with report data via REPL')
-	s.add_argument('json')
-	s.set_defaults(func=do_interact)
+	s.add_argument('json', nargs='?')
+	s.set_defaults(func=do_interact_cmd)
 
 	s = subparsers.add_parser('monthly',
 			help='Generate a (template) monthly report')
