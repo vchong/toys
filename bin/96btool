@@ -22,6 +22,10 @@ import argparse
 import collections
 import datetime
 import iso8601
+try:
+	import ujson
+except:
+	import json as ujson
 import json
 import re
 import subprocess
@@ -82,13 +86,13 @@ category_lookup = {
 
 def load_json(obj):
 	if not obj:
-		return json.load(sys.stdin)
+		return ujson.load(sys.stdin)
 
 	if isinstance(obj, str):
 		with open(obj, 'r') as f:
-			return json.load(f)
+			return ujson.load(f)
 
-	return json.load(obj)
+	return ujson.load(obj)
 
 class Post(dict):
 	post_db = {}
@@ -317,7 +321,7 @@ def do_count(args):
 
 			print('</table>\n')
 		else:
-			json.dump(count, sys.stdout, sort_keys=True, indent=2)
+			ujson.dump(count, sys.stdout, sort_keys=True, indent=2)
 	elif sieve:
 		count = collect.accumulate(posts, sieve)
 		if None in count:
@@ -349,7 +353,7 @@ def do_count(args):
 		else:
 			if args.rank:
 				count = flat_count
-			json.dump(count, sys.stdout, sort_keys=True, indent=2)
+			ujson.dump(count, sys.stdout, sort_keys=True, indent=2)
 	else:
 		print(len(posts))
 
@@ -388,7 +392,7 @@ def do_fetch(args):
 	# Sort by date
 	posts = sorted(posts, key=lambda k: k['created_at'])
 
-	json.dump(posts, sys.stdout, indent=2)
+	ujson.dump(posts, sys.stdout, indent=2)
 
 def do_filter(args):
 	'''Filter posts using various criteria (including date of post)'''
@@ -444,7 +448,7 @@ def do_filter(args):
 				re.search(e, p['topic']['title']) or
 				re.search(e, p['raw']) ]
 
-	json.dump(posts, sys.stdout, indent=2)
+	ujson.dump(posts, sys.stdout, indent=2)
 
 def do_format(args):
 	'''Summarize the data in a custom text format'''
@@ -500,13 +504,13 @@ def do_merge(args):
 	Post.index(posts)
 	posts = [ Post.post_db[k] for k in sorted(Post.post_db.keys()) ]
 
-	json.dump(posts, sys.stdout, sort_keys=True, indent=2)
+	ujson.dump(posts, sys.stdout, sort_keys=True, indent=2)
 
 def do_monthly(args):
 	'''Generate a monthly activity report'''
 	try:
 		with open(os.environ['HOME']+'/.96btool-highlight_nicks') as f:
-			hlnicks = json.load(f)
+			hlnicks = ujson.load(f)
 	except IOError:
 		hlnicks = ()
 
@@ -642,13 +646,13 @@ def do_pull(args):
 
 		os.rename(args.db, args.db + '.bak')
 		with open(args.db, 'w') as f:
-			json.dump(posts, f, sort_keys=True, indent=2)
+			ujson.dump(posts, f, sort_keys=True, indent=2)
 
 		if args.verbose:
 			print(' ok')
 
 	if args.pipe:
-		json.dump(posts, sys.stdout, indent=2)
+		ujson.dump(posts, sys.stdout, indent=2)
 
 	return retval
 
@@ -665,7 +669,7 @@ def do_refresh(args):
 
 	if args.users:
 		with open(args.users, 'r') as f:
-			users = json.load(f)
+			users = ujson.load(f)
 		for u in users:
 			Post.user_db[u['username']] = u
 
@@ -692,7 +696,7 @@ def do_refresh(args):
 
 		os.rename(args.db, args.db + '.bak')
 		with open(args.db, 'w') as f:
-			json.dump(posts, f, sort_keys=True, indent=2)
+			ujson.dump(posts, f, sort_keys=True, indent=2)
 
 def do_tag(args):
 	'''Tag posts that match certain criteria'''
@@ -708,7 +712,7 @@ def do_tag(args):
 	if args.usermap:
 		(usermap, needle) = args.usermap.split(',', maxsplit=1)
 		with open(usermap, 'r') as f:
-			usermap = json.load(f)
+			usermap = ujson.load(f)
 
 	def tag(p):
 		if args.unique:
@@ -730,7 +734,7 @@ def do_tag(args):
 		if args.empty and len(p['tags']) == 0:
 			tag(p)
 
-	json.dump(posts, sys.stdout, indent=2)
+	ujson.dump(posts, sys.stdout, indent=2)
 
 def do_usermap(args):
 	'''Generate a usermap'''
@@ -746,7 +750,7 @@ def do_usermap(args):
 		fields = ln.strip().split()
 		usermap[fields[0]] = fields[1]
 
-	json.dump(usermap, sys.stdout, indent=2)
+	ujson.dump(usermap, sys.stdout, indent=2)
 
 def do_weekly(args):
 	'''Generate a detailed weekly activity report'''
