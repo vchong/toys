@@ -751,8 +751,8 @@ def do_usermap(args):
 
 	usermap = {}
 	for ln in lines:
-		fields = ln.strip().split()
-		usermap[fields[0]] = fields[1]
+		fields = ln.strip().split(',')
+		usermap[fields[2]] = fields[3]
 
 	ujson.dump(usermap, sys.stdout, indent=2)
 
