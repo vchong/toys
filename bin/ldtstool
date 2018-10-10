@@ -130,14 +130,15 @@ class Ticket(dict):
 			'spreadtrum', 'support', 'team', 'ti', 'advantech',
 			'broadcom', 'contact_us', 'defect_created',
 			'development_platforms', 'embedded_applications',
-			'general_support', 'getting_involved', 'gts', 'juno',
+			'general_support', 'getting_involved', 'hxt', 'gts', 'juno',
 			'landing_team', 'level_4', 'linaro_enterprise_group',
 			'membership', 'new', 'page', 'panda',
 			'qa_lava_test_scripts', 'qualcomm', 'qualcomm_stp',
 			'sample', 'samsung', 'sharp_zarus_sl5500',
 			'staging_vexpress_a9', 'v_fav', 'vicky_test',
 			'video_condecs', 'zd_test', 'zendesk', 'arrow',
-                        'variscite', 'landing_team_lt'))
+                        'variscite', 'landing_team_lt', 'code_aurora',
+                        'developer_services_contract', 'baslerweb'))
 
 		unknown = set(tags) - nonglobs
 		if len(unknown):
