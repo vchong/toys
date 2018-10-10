@@ -357,6 +357,13 @@ class Report(object):
 
 		return [ a for a in sorted(assignees) ]
 
+	def get_epic(self, key):
+		'''Look up an epic from a key.'''
+		card = self.issues[key]
+		if 'parent' in card and card['parent'] in self.issues:
+			card = self.issues[card['parent']]
+		return card
+
 	def worklog(self, key=None, recurse=False):
 		'''Fetch worklogs held within the report.'''
 		if key:
@@ -401,6 +408,7 @@ def do_chart(issues, **args):
 		return d.strftime('%Y-%m-%d')
 	collate_by_month = lambda w: w.date('started').strftime('%Y-%m')
 	collate_by_engineer = lambda w: w['author']['displayName']
+	collate_by_epic = lambda w: report.get_epic(w['issue'])['summary']
 	collate_by_member = lambda w: report.issues[w['issue']].get_member()
 	collate_by_component = lambda w: report.issues[w['issue']].get_component()
 	count_effort = lambda w: w['timeSpentSeconds'] / 3600
@@ -429,6 +437,19 @@ def do_chart(issues, **args):
 				count_effort)
 		chart.piechart(data, args['effort_by_engineer'])
 
+
+	if args['effort_by_epic'] and args['barchart']:
+		data = collect.accumulate_2d(worklog,
+				collate_by_week, collate_by_epic, count_effort)
+		chart.stacked_barchart(data, args['effort_by_epic'],
+				title = 'Effort by week and epic',
+				xlabel = 'Date',
+				ylabel = 'Effort (man/hours)')
+
+	if args['effort_by_epic'] and args['piechart']:
+		data = collect.accumulate(worklog, collate_by_epic,
+				count_effort)
+		chart.piechart(data, args['effort_by_epic'])
 
 	if args['effort_by_member'] and args['barchart']:
 		data = collect.accumulate_2d(worklog,
@@ -797,6 +818,7 @@ def main(argv):
 	s.add_argument('--card-tracker', metavar='PNGFILE')
 	s.add_argument('--effort-by-component', metavar='PNGFILE')
 	s.add_argument('--effort-by-engineer', metavar='PNGFILE')
+	s.add_argument('--effort-by-epic', metavar='PNGFILE')
 	s.add_argument('--effort-by-member', metavar='PNGFILE')
 	s.add_argument('--count-by-member', metavar='PNGFILE')
 	s.add_argument('--barchart', action='store_true')
