@@ -578,6 +578,10 @@ def do_piechart(args):
 	posts = [ Post(p) for p in count ]
 	count = collect.accumulate(posts,
 			lambda p: p['topic']['category'])
+	if args.simplify:
+		remaining = collect.simplify(count, args.simplify / 100)
+		collect['Other'] = remaining + collect['Uncategorized']
+		del collect['Uncategorized']
 	chart.piechart(count, args.output, args.title)
 
 def do_pull(args):
@@ -888,6 +892,8 @@ def main(argv):
 	s = new_parser(do_piechart)
 	s.add_argument("--title", default=None)
 	s.add_argument("--output", default="96btool.png")
+	s.add_argument('--simplify', type=float,
+			help="Combine values less than N percent")
 
 	s = new_parser(do_pull, no_json_arg=True)
 	s.add_argument('--debug', action='store_true',
