@@ -281,7 +281,7 @@ def do_chart(args):
 def do_count(args):
 	'''Count posts, potential organising them into categories first'''
 	posts = Post.load(args.json)
-	count = None
+	sieve = None
 
 	if args.by_category:
 		sieve = lambda p: p['topic']['category']
