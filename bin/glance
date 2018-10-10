@@ -20,6 +20,7 @@ import iso8601
 import os
 import re
 import textwrap
+import subprocess
 import sys
 
 import toys.collect as collect
@@ -810,6 +811,52 @@ def do_interact_cmd(args):
 
 	interact()
 
+def do_selftest_cmd(args):
+	'''Very simple built-in-self-test'''
+	cmds = (
+		'chart --card-tracker=test.png --since 2017-01-01 --until 2017-03-31',
+		'chart --effort-by-component=test.png',
+		'chart --effort-by-engineer=test.png',
+		'chart --effort-by-member=test.png',
+		'chart --count-by-member=test.png',
+		'count',
+		'count --worklog',
+		'filter --assignee daniel > /dev/null',
+		'filter --worklog-since 2017-01-01 --worklog-until 2017-03-31 --no-worklog > /dev/null',
+		'format > /dev/null',
+		'monthly > /dev/null',
+		'summary > /dev/null',
+		'weekly > /dev/null',
+		'worklog > /dev/null',
+	)
+
+	def run(cmd):
+		print(cmd)
+		return subprocess.check_output(
+				cmd,
+				shell=True,
+				stderr=subprocess.STDOUT
+			).decode('UTF-8')
+
+	try:
+		# Grab some data to run the tests on
+		if not args.json:
+			run('glance fetch --since 2018-01-01 > test.json')
+			args.json = 'test.json'
+		else:
+			args.keep = True
+
+		# Run the tests
+		for cmd in cmds:
+			print(run('cat {} | glance {}'.format(args.json, cmd)), end='')
+	except subprocess.CalledProcessError as e:
+		print(e.output.decode('UTF-8'))
+		print('FAILED WITH ERRORCODE: {}'.format(e.returncode))
+	finally:
+		if not args.keep:
+			run('rm -f test.json')
+		run('rm -f test.png')
+
 def do_spy_cmd(args):
 	issues = do_fetch(since=args.since)
 	do_filter(issues, worklog_since=args.since, worklog_by=args.on, no_worklog=True)
@@ -891,6 +938,13 @@ def main(argv):
 			help='Generate a (template) monthly report')
 	s.add_argument('json', nargs='?')
 	s.set_defaults(func=do_monthly)
+
+	s = subparsers.add_parser('selftest',
+			help='Run some basic sanity tests')
+	s.add_argument('--keep', action='store_true',
+			help='Do not delete test.json after test is completed')
+	s.add_argument('json', nargs='?')
+	s.set_defaults(func=do_selftest_cmd)
 
 	s = subparsers.add_parser('spy',
 			help='Visualize a users worklog')
