@@ -13,6 +13,7 @@ Prerequisites (ubuntu:16.04):
 
 import argparse
 import collections
+import datetime
 from jira.client import JIRA
 import json
 import iso8601
@@ -393,7 +394,11 @@ def do_chart(issues, **args):
 		args['barchart'] = True
 
 	# Functions to parse worklog data
-	collate_by_week = lambda w: w.date('started').strftime('%Y-%U')
+	def collate_by_week(w):
+		d = w.date('started')
+		while d.weekday() != 4:
+			d += datetime.timedelta(1)
+		return d.strftime('%Y-%m-%d')
 	collate_by_month = lambda w: w.date('started').strftime('%Y-%m')
 	collate_by_engineer = lambda w: w['author']['displayName']
 	collate_by_member = lambda w: report.issues[w['issue']].get_member()
