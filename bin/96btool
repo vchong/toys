@@ -411,6 +411,12 @@ def do_filter(args):
 		users = args.user.split(',')
 		posts = [ p for p in posts if p['username'] in users ]
 
+	if args.usermap:
+		(usermap, needle) = args.usermap.split(',', maxsplit=1)
+		with open(usermap, 'r') as f:
+			usermap = ujson.load(f)
+		posts = [ p for p in posts if p['username'] in usermap
+				and needle in usermap[p['username']] ]
 
 	if args.first_post:
 		# Opps. We stripped out the post stream so this test ends up more
@@ -875,6 +881,7 @@ def main(argv):
 	s.add_argument("--until", default="tomorrow",
 			help="When to stop gathering .information")
 	s.add_argument("--user", help="Select only posts by this user")
+	s.add_argument('--usermap', help='Select posts using a lookup table')
 
 	s = new_parser(do_format)
 	s.add_argument("--template",
