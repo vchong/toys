@@ -19,6 +19,7 @@ def get_colour(s):
 		'96Boards' : 'red',
 		'Marvell' : 'green',
 		'Hisilicon' : 'pink',
+                'Qualcomm' : 'blue',
 
                 # Daniel Thompson and Leo Yan both hash orange
                 'Daniel Thompson' : 'green',
