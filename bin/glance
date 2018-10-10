@@ -12,6 +12,7 @@ Prerequisites (ubuntu:16.04):
 '''
 
 import argparse
+import collections
 from jira.client import JIRA
 import json
 import iso8601
@@ -375,13 +376,21 @@ class Report(object):
 
 		return [ Worklog(w) for w in sorted(worklog, key=lambda x: x['started']) ]
 
-def do_chart(args):
-	issues = Issue.load(args.json)
+
+#
+# Composable actions
+#
+# These typically match a specific sub-command but can also be used by other
+# sub-commands in combination to achieve macro commands.
+#
+
+def do_chart(issues, **args):
+	args = collections.defaultdict(lambda : None, args)
 	report = Report(issues)
 	worklog = report.worklog()
 
-	if not args.barchart and not args.piechart:
-		args.barchart = True
+	if not args['barchart'] and not args['piechart']:
+		args['barchart'] = True
 
 	# Functions to parse worklog data
 	collate_by_week = lambda w: w.date('started').strftime('%Y-%U')
@@ -395,52 +404,52 @@ def do_chart(args):
 	# rather difficult (need to keep all worklogs and count once (and only
 	# once) for worklogs in a time interval. This means neither traversing
 	# by issue nor traversing by worklog can give us the count we want.
-	if args.count_by_member and args.piechart:
+	if args['count_by_member'] and args['piechart']:
 		# Second lambda counts 1 is the card has a worklog, 0 otherwise.
 		data = collect.accumulate(issues,
 				lambda i: i.get_member(),
 				lambda i: int(bool(len(i['worklog']))))
-		chart.piechart(data, args.count_by_member)
+		chart.piechart(data, args['count_by_member'])
 
-	if args.effort_by_engineer and args.barchart:
+	if args['effort_by_engineer'] and args['barchart']:
 		data = collect.accumulate_2d(worklog,
 				collate_by_week, collate_by_engineer, count_effort)
-		chart.stacked_barchart(data, args.effort_by_engineer,
+		chart.stacked_barchart(data, args['effort_by_engineer'],
 				title = 'Effort by week and assigned engineer',
-				xlabel = 'Year and week number',
+				xlabel = 'Date',
 				ylabel = 'Effort (man/hours)')
 
-	if args.effort_by_engineer and args.piechart:
+	if args['effort_by_engineer'] and args['piechart']:
 		data = collect.accumulate(worklog, collate_by_engineer,
 				count_effort)
-		chart.piechart(data, args.effort_by_engineer)
+		chart.piechart(data, args['effort_by_engineer'])
 
 
-	if args.effort_by_member and args.barchart:
+	if args['effort_by_member'] and args['barchart']:
 		data = collect.accumulate_2d(worklog,
 				collate_by_month, collate_by_member, count_effort)
-		chart.stacked_barchart(data, args.effort_by_member,
+		chart.stacked_barchart(data, args['effort_by_member'],
 				title = 'Effort by month and member',
 				ylabel = 'Effort (man/hours)')
 
-	if args.effort_by_member and args.piechart:
+	if args['effort_by_member'] and args['piechart']:
 		data = collect.accumulate(worklog, collate_by_member, count_effort)
-		chart.piechart(data, args.effort_by_member)
+		chart.piechart(data, args['effort_by_member'])
 
-	if args.effort_by_component and args.barchart:
+	if args['effort_by_component'] and args['barchart']:
 		data = collect.accumulate_2d(worklog,
 				collate_by_month, collate_by_component, count_effort)
-		chart.stacked_barchart(data, args.effort_by_component,
+		chart.stacked_barchart(data, args['effort_by_component'],
 				title = 'Effort by month and component',
 				ylabel = 'Effort (man/hours)')
 
-	if args.effort_by_component and args.piechart:
+	if args['effort_by_component'] and args['piechart']:
 		data = collect.accumulate(worklog, collate_by_component, count_effort)
-		chart.piechart(data, args.effort_by_component)
+		chart.piechart(data, args['effort_by_component'])
 
-	if args.card_tracker:
-		since = date.smart_parse(args.since)
-		until = date.smart_parse(args.until, end_of_day=True)
+	if args['card_tracker']:
+		since = date.smart_parse(args['since'])
+		until = date.smart_parse(args['until'], end_of_day=True)
 
 		all_cards = report.issues.values()
 		closed_cards = [ c for c in all_cards if c.date('resolutiondate') ]
@@ -480,7 +489,7 @@ def do_chart(args):
 		plt.grid(zorder=0)
 		plt.xticks([x+bar_width for x in index], labels, rotation=90)
 		lgd = plt.legend(bbox_to_anchor=(1.05, 1), loc=2)
-		plt.savefig(args.card_tracker, bbox_extra_artists=(lgd,), bbox_inches='tight')
+		plt.savefig(args['card_tracker'], bbox_extra_artists=(lgd,), bbox_inches='tight')
 		plt.close()
 
 def do_count(args):
@@ -493,23 +502,24 @@ def do_count(args):
 
 	print(len(issues))
 
-def do_fetch(args):
-	since = date.smart_parse(args.since)
+def do_fetch(**args):
+	args = collections.defaultdict(lambda : None, args)
+	since = date.smart_parse(args['since'])
 
-	if args.constraint:
+	if args['constraint']:
 		# Substitute @ symbols if the arguments looks like it might be an
 		# e-mail address (by containing a .)
 		constraint = [ x.replace('@', '\\u0040') if '.' in x else x
-					for x in args.constraint ]
+					for x in args['constraint'] ]
 		constraint = ' '.join(constraint)
 	else:
 		constraint = None
 
 	issues = sorted(Issue.fetch(since, constraint), key=lambda i: i['key'])
-	json.dump(issues, sys.stdout)
+	return issues
 
-def do_filter(args):
-	issues = Issue.load(args.json)
+def do_filter(issues, **args):
+	args = collections.defaultdict(lambda : None, args)
 	by_key = {}
 	for i in issues:
 		by_key[i['key']] = i
@@ -527,40 +537,40 @@ def do_filter(args):
 
 		return filter_by(f, needles)
 
-	if args.assignee:
+	if args['assignee']:
 		issues = [ i for i in issues if
-				filter_by_field('assignee', i, args.assignee.split(',')) ]
+				filter_by_field('assignee', i, args['assignee'].split(',')) ]
 
-	if args.component:
-		issues = [ i for i in issues if i.has_component(args.component, args.strict) ]
+	if args['component']:
+		issues = [ i for i in issues if i.has_component(args['component'], args['strict']) ]
 
-	if args.since:
-		since = date.smart_parse(args.since)
+	if args['since']:
+		since = date.smart_parse(args['since'])
 		issues = [ i for i in issues if i.date('updated') >= since ]
 
-	if args.worklog_since:
-		since = date.smart_parse(args.worklog_since)
+	if args['worklog_since']:
+		since = date.smart_parse(args['worklog_since'])
 		for i in issues:
 			i['worklog'] = [ w for w in i['worklog'] if
 					iso8601.parse_date(w['started']) >= since ]
 
-	if args.worklog_until:
-		until = date.smart_parse(args.worklog_until, end_of_day=True)
+	if args['worklog_until']:
+		until = date.smart_parse(args['worklog_until'], end_of_day=True)
 		for i in issues:
 			i['worklog'] = [ w for w in i['worklog'] if
 					iso8601.parse_date(w['started']) <= until ]
 
-	if args.worklog_by:
+	if args['worklog_by']:
 		for i in issues:
 			i['worklog'] = [ w for w in i['worklog'] if
-					filter_by(w['author'], args.worklog_by.split(',')) ]
+					filter_by(w['author'], args['worklog_by'].split(',')) ]
 
-	if args.no_worklog:
+	if args['no_worklog']:
 		issues = [ i for i in issues if i['worklog'] ]
 
 	# Go though the issues and ensure we "unfilter" any parent tickets
 	# since the Report class may go looking for them.
-	if not args.no_keep_parent:
+	if not args['no_keep_parent']:
 		keys = set([ i['key'] for i in issues ])
 		for i in list(issues):
 			if 'parent' in i:
@@ -570,7 +580,7 @@ def do_filter(args):
 				issues.append(by_key[i['parent']])
 		issues = sorted(issues, key=lambda i: i['key'])
 
-	json.dump(issues, sys.stdout)
+	return issues
 
 def do_format(args):
 	for i in Issue.load(args.json):
@@ -674,7 +684,6 @@ def do_monthly(args):
 ''')
 
 
-
 def do_passwd(args):
 	cfg = config.get_config()
 	password = config.set_password(cfg, 'jira')
@@ -749,6 +758,30 @@ def do_worklog(args):
 			ln = ln.replace(m.group(0), '{{{}}}'.format(fmt).format(val))
 		print(ln)
 
+
+#
+# Sub-command implementation
+#
+# These primarily rely on composable functions to do the actual work.
+#
+
+def do_chart_cmd(args):
+	issues = Issue.load(args.json)
+	do_chart(issues, **vars(args))
+
+def do_fetch_cmd(args):
+	issues = do_fetch(**vars(args))
+	json.dump(issues, sys.stdout)
+
+def do_filter_cmd(args):
+	issues = Issue.load(args.json)
+	do_filter(issues, **vars(args))
+	json.dump(issues, sys.stdout)
+
+#
+# main - argument parsing and dispatch to sub-commands
+#
+
 def main(argv):
 	parser = argparse.ArgumentParser()
 	subparsers = parser.add_subparsers(dest='sub-command')
@@ -768,7 +801,7 @@ def main(argv):
 	s.add_argument('--until',
 		help='Only chart data before this date (applies to card graphs only)')
 	s.add_argument('json', nargs='?')
-	s.set_defaults(func=do_chart)
+	s.set_defaults(func=do_chart_cmd)
 
 	s = subparsers.add_parser('count',
 			help='Generate summarized statistics')
@@ -782,7 +815,7 @@ def main(argv):
                         help='When to gather information from')
 	s.add_argument("constraint", nargs="*",
 			help="Any additional JQL contraints")
-	s.set_defaults(func=do_fetch)
+	s.set_defaults(func=do_fetch_cmd)
 
 	s = subparsers.add_parser('filter',
 			help='Filter cards and worklogs')
@@ -791,13 +824,14 @@ def main(argv):
 	s.add_argument('--since')
 	s.add_argument('--strict', action='store_true')
 	s.add_argument('--no-keep-parent', action='store_true')
-	s.add_argument('--no-worklog', action='store_true')
+	s.add_argument('--no-worklog', action='store_true',
+                       help='Filter cards without any worklog attached')
 	s.add_argument('--worklog-by',
 		       help="Select only worklogs by this user")
 	s.add_argument('--worklog-since')
 	s.add_argument('--worklog-until')
 	s.add_argument('json', nargs='?')
-	s.set_defaults(func=do_filter)
+	s.set_defaults(func=do_filter_cmd)
 
 	s = subparsers.add_parser('format',
 			help='Summarize each card using a template')
