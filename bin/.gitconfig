@@ -1,0 +1,25 @@
+[user]
+	name = Victor Chong
+	email = victor.chong@linaro.org
+[core]
+	editor = vim
+[merge]
+	tool = vimdiff
+[color]
+        ui = true
+[branch]
+        autosetuprebase = always
+[credential]
+        helper = cache --timeout 10000000 
+[push]
+	default = simple
+[http]
+	cookiefile = /Users/vchong/.gitcookies
+[alias]
+	fixes = show --format='Fixes: %h ("%s")' -s --abbrev=12
+	pvb = push origin people/victor.chong/oemcrypto-v15-dev
+	dvb = diff origin/people/victor.chong/oemcrypto-v15-dev
+	pgd = push gerrit HEAD:refs/for/oemcrypto-v15-dev
+	ria = rebase -i --autosquash
+	cfu = commit --fixup
+	roc = review oemcrypto-v15-dev
